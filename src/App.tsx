@@ -224,7 +224,7 @@ export default function App() {
                   </Routes>
                 </Suspense>
               </Layout>
-            )
+            }
           } />
         </Routes>
         </Suspense>
