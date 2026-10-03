@@ -163,7 +163,7 @@ export function useReportsAnalytics(params: {
 
   return {
     categoryData, hourData, branchData,
-  filteredTransfers, transferStats,
+    filteredTransfers, transferStats,
     filteredTransactions,
   };
 }
