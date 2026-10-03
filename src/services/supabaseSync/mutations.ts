@@ -1,5 +1,5 @@
 import { getSupabase } from '../../lib/supabase';
-import { enqueueOfflineItem } from '../offlineSync';
+import { enqueueOfflineItem } from '../offlineQueue';
 import { getActiveTenant, getEmployeeForIdentity } from '../tenant';
 export type ResetSection =
   | 'inventory' | 'reports' | 'catalog' | 'customers' | 'suppliers'
