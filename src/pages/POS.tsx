@@ -25,7 +25,7 @@ export default function POS() {
   const [lastClosedSession, setLastClosedSession] = useState<CashRegisterSession | null>(null);
   const [showOpenShiftModal, setShowOpenShiftModal] = useState(false);
   const [joiningSessionId, setJoiningSessionId] = useState<string | null>(null);
-  const { categories, products, cart, addToCart, updateCartQty, clearCart, processTransaction, branches, currentBranchId, setCurrentBranch, activeSessionId, setActiveSessionId, currencies, getBaseCurrency, currentCustomerId, setCartCustomer, currentUser, pendingOrders, removePendingOrder, getCurrentSession, openSession, closeSession, addCashMovement, removeCashMovement, inventory, addCustomer, bankCards, addBankTransaction, customers, users, logout, createReturn, processReturn, receiptConfig, idnSettlementPrices, addIDNSettlementPrice, updateIDNSettlementPrice, deleteIDNSettlementPrice, setInventoryQuantity, addNotification, joinOpenSession, salarySettlements } = useStore(useShallow((state) => ({ categories: state.categories, products: state.products, cart: state.cart, addToCart: state.addToCart, updateCartQty: state.updateCartQty, clearCart: state.clearCart, processTransaction: state.processTransaction, branches: state.branches, currentBranchId: state.currentBranchId, setCurrentBranch: state.setCurrentBranch, activeSessionId: state.activeSessionId, setActiveSessionId: state.setActiveSessionId, currencies: state.currencies, getBaseCurrency: state.getBaseCurrency, currentCustomerId: state.currentCustomerId, setCartCustomer: state.setCartCustomer, currentUser: state.currentUser, pendingOrders: state.pendingOrders, removePendingOrder: state.removePendingOrder, getCurrentSession: state.getCurrentSession, openSession: state.openSession, closeSession: state.closeSession, addCashMovement: state.addCashMovement, removeCashMovement: state.removeCashMovement, inventory: state.inventory, addCustomer: state.addCustomer, bankCards: state.bankCards, addBankTransaction: state.addBankTransaction, customers: state.customers, users: state.users, logout: state.logout, createReturn: state.createReturn, processReturn: state.processReturn, receiptConfig: state.receiptConfig, idnSettlementPrices: state.idnSettlementPrices, addIDNSettlementPrice: state.addIDNSettlementPrice, updateIDNSettlementPrice: state.updateIDNSettlementPrice, deleteIDNSettlementPrice: state.deleteIDNSettlementPrice, setInventoryQuantity: state.setInventoryQuantity, addNotification: state.addNotification, joinOpenSession: state.joinOpenSession, salarySettlements: state.salarySettlements })));
+  const { categories, products, cart, addToCart, updateCartQty, clearCart, processTransaction, branches, currentBranchId, setCurrentBranch, activeSessionId, setActiveSessionId, currencies, getBaseCurrency, currentCustomerId, setCartCustomer, currentUser, pendingOrders, removePendingOrder, getCurrentSession, openSession, closeSession, addCashMovement, removeCashMovement, inventory, addCustomer, bankCards, addBankTransaction, customers, users, logout, createReturn, processReturn, receiptConfig, setInventoryQuantity, addNotification, joinOpenSession, salarySettlements } = useStore(useShallow((state) => ({ categories: state.categories, products: state.products, cart: state.cart, addToCart: state.addToCart, updateCartQty: state.updateCartQty, clearCart: state.clearCart, processTransaction: state.processTransaction, branches: state.branches, currentBranchId: state.currentBranchId, setCurrentBranch: state.setCurrentBranch, activeSessionId: state.activeSessionId, setActiveSessionId: state.setActiveSessionId, currencies: state.currencies, getBaseCurrency: state.getBaseCurrency, currentCustomerId: state.currentCustomerId, setCartCustomer: state.setCartCustomer, currentUser: state.currentUser, pendingOrders: state.pendingOrders, removePendingOrder: state.removePendingOrder, getCurrentSession: state.getCurrentSession, openSession: state.openSession, closeSession: state.closeSession, addCashMovement: state.addCashMovement, removeCashMovement: state.removeCashMovement, inventory: state.inventory, addCustomer: state.addCustomer, bankCards: state.bankCards, addBankTransaction: state.addBankTransaction, customers: state.customers, users: state.users, logout: state.logout, createReturn: state.createReturn, processReturn: state.processReturn, receiptConfig: state.receiptConfig, setInventoryQuantity: state.setInventoryQuantity, addNotification: state.addNotification, joinOpenSession: state.joinOpenSession, salarySettlements: state.salarySettlements })));
 
 
   // Heavy administrative collections subscribe only while their UI is visible.
@@ -43,36 +43,6 @@ export default function POS() {
     ) || null;
   }, [activeCashSessions]);
   const activeTransactions = useMemo(() => transactions.filter(t => !t.deletedAt), [transactions]);
-  const [idnFilter, setIdnFilter] = useState("");
-  const [debouncedIdnFilter, setDebouncedIdnFilter] = useState("");
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedIdnFilter(idnFilter);
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [idnFilter]);
-
-  const [showConfigModal, setShowConfigModal] = useState(false);
-  const [idnPhysicalCounts, setIdnPhysicalCounts] = useState<{ [productId: string]: number }>({});
-  const [isProcessingIDN, setIsProcessingIDN] = useState(false);
-  const [idnSelectedProductFilter, setIdnSelectedProductFilter] = useState("all");
-
-  const [showIDNReceiptModal, setShowIDNReceiptModal] = useState<{
-    tx: Transaction;
-    details: any[];
-    workerName: string;
-    branchName: string;
-    totalToPay: number;
-    publicSales: number;
-    date: string;
-  } | null>(null);
-
-  const [showSetSettlementPriceModal, setShowSetSettlementPriceModal] = useState(false);
-  const [idnPriceFormProduct, setIdnPriceFormProduct] = useState("");
-  const [idnPriceFormAmount, setIdnPriceFormAmount] = useState("");
-
-
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [pendingOfflineCount, setPendingOfflineCount] = useState(getOfflineQueueCount());
   const [offlineConflictCount, setOfflineConflictCount] = useState(getOfflineConflictCount());
@@ -148,7 +118,6 @@ export default function POS() {
   
   
   const navigate = useNavigate();
-  const fallbackSessionBranchId = currentBranchId || (currentUser?.branchId || currentUser?.assignedBranchId || branches[0]?.id || '');
   const currentSession = useMemo(() => {
     if (activeSessionId) {
       const active = cashSessions.find(s => s.id === activeSessionId && s.status === 'open' && !s.deletedAt);
@@ -267,307 +236,51 @@ export default function POS() {
   const [joiningSessionPassword, setJoiningSessionPassword] = useState("");
   const [isNewEmployee, setIsNewEmployee] = useState(false);
 
-  // Worker detection for shift opening and branch locking
+  // El empleado pertenece a la empresa activa. Su alcance de almacenes
+  // viene de employee_warehouse_access y se mantiene en allowedBranches.
   const detectedWorker = React.useMemo(() => {
-    if (sessionWorkerId) {
-      const byId = (users || []).find(u => u.id === sessionWorkerId);
-      if (byId) return byId;
-    }
+    if (sessionWorkerId) return (users || []).find(u => u.id === sessionWorkerId) || null;
     const trimmed = (sessionWorkerName || '').toLowerCase().trim();
-    if (trimmed) {
-      return (users || []).find(u => (u.name || '').toLowerCase() === trimmed) || null;
-    }
-    return null;
+    if (!trimmed) return null;
+    return (users || []).find(u => (u.name || '').toLowerCase() === trimmed) || null;
   }, [sessionWorkerId, sessionWorkerName, users]);
 
-  const isWorkerIndependent = detectedWorker?.isIndependent === true;
-  const workerAssignedBranchId = detectedWorker?.assignedBranchId || (
-    detectedWorker?.allowedBranches && detectedWorker.allowedBranches.length === 1 ? detectedWorker.allowedBranches[0] : null
-  );
+  const workerAssignedBranchId = detectedWorker?.branchId ||
+    (detectedWorker?.allowedBranches?.length === 1 ? detectedWorker.allowedBranches[0] : null);
 
-  const [posViewMode, setPosViewMode] = useState<'standard' | 'idn'>('standard');
-  const [selectedAdminIDNUserId, setSelectedAdminIDNUserId] = useState<string>('');
-
-  const isCurrentUserIndependent = currentUser?.isIndependent === true;
   const currentSessionWorker = currentSession ? (
-    (users || []).find(u => u.id === currentSession.userId || (u.name && currentSession.workerName && u.name.toLowerCase() === currentSession.workerName.toLowerCase()))
+    (users || []).find(u => u.id === currentSession.userId) || null
   ) : null;
-  const isSessionIndependent = currentSessionWorker?.isIndependent === true;
-
-  const independentUsers = (users || []).filter(u => u.isIndependent);
 
   useEffect(() => {
-    // El selector solo tiene sentido para administradores. Un vendedor IDN
-    // autenticado queda bloqueado a su propia identidad y almacén.
-    if (currentUser?.role !== 'admin' || isCurrentUserIndependent || isSessionIndependent) {
-      setSelectedAdminIDNUserId('');
-      return;
-    }
-    if (!selectedAdminIDNUserId && independentUsers.length > 0) {
-      setSelectedAdminIDNUserId(independentUsers[0].id);
-    }
-  }, [currentUser?.role, isCurrentUserIndependent, isSessionIndependent, independentUsers, selectedAdminIDNUserId]);
-
-  // When a shift is opened for an independent worker or current user is independent, default view to 'idn'
-  useEffect(() => {
-    if (isSessionIndependent || isCurrentUserIndependent) {
-      setPosViewMode('idn');
-    }
-  }, [isSessionIndependent, isCurrentUserIndependent]);
-
-  const shouldShowIDNView = isCurrentUserIndependent || isSessionIndependent || posViewMode === 'idn';
-
-  const activeIDNWorker = React.useMemo(() => {
-    // Un vendedor IDN autenticado o una sesión abierta para un IDN quedan
-    // estrictamente ligados a ese vendedor. Solo el administrador puede
-    // escoger otro IDN desde el selector administrativo.
-    if (isCurrentUserIndependent) return currentUser;
-    if (isSessionIndependent) return currentSessionWorker;
-    if (currentUser?.role === 'admin' && selectedAdminIDNUserId) {
-      const selected = (users || []).find(u => u.id === selectedAdminIDNUserId && u.isIndependent);
-      if (selected) return selected;
-    }
-    return currentUser?.role === 'admin'
-      ? (users || []).find(u => u.isIndependent) || currentUser
-      : currentUser;
-  }, [currentUser?.role, isCurrentUserIndependent, isSessionIndependent, selectedAdminIDNUserId, users, currentUser, currentSessionWorker]);
-
-  const activeIDNBranchId = activeIDNWorker?.assignedBranchId || activeIDNWorker?.branchId || currentBranchId;
-
-  // Una cuenta IDN autenticada queda fijada a su propio vendedor y almacén.
-  useEffect(() => {
-    if (!isCurrentUserIndependent || !currentUser?.id) return;
-    setSessionWorkerId(currentUser.id);
-    setSessionWorkerName(currentUser.name || '');
-    const assignedBranch = currentUser.assignedBranchId || currentUser.branchId ||
-      (currentUser.allowedBranches?.length === 1 ? currentUser.allowedBranches[0] : '');
-    if (assignedBranch) setSessionBranchId(assignedBranch);
-    setPosViewMode('idn');
-  }, [isCurrentUserIndependent, currentUser?.id, currentUser?.name, currentUser?.assignedBranchId, currentUser?.branchId]);
-
-  // Auto-lock sessionBranchId if worker has an assigned branch
-  useEffect(() => {
-    if (workerAssignedBranchId) {
-      setSessionBranchId(workerAssignedBranchId);
-    }
+    if (workerAssignedBranchId) setSessionBranchId(workerAssignedBranchId);
   }, [workerAssignedBranchId]);
 
   useEffect(() => {
-    if (sessionWorkerName) {
-      const exists = users.find(u => (u.name || '').toLowerCase() === sessionWorkerName.toLowerCase().trim());
-      setIsNewEmployee(!exists);
-    } else {
-      setIsNewEmployee(false);
-    }
+    const exists = sessionWorkerName
+      ? users.some(u => u.isActive !== false && (u.name || '').toLowerCase() === sessionWorkerName.toLowerCase().trim())
+      : false;
+    setIsNewEmployee(Boolean(sessionWorkerName && !exists));
   }, [sessionWorkerName, users]);
-  
-  const isBranchLocked = Boolean(
-    workerAssignedBranchId ||
-    (currentUser?.role !== 'admin' && currentUser?.assignedBranchId) ||
-    (currentSession && ((users || []).find(u => u.id === currentSession.userId)?.assignedBranchId))
-  );
+
+  const isBranchLocked = Boolean(workerAssignedBranchId);
 
   const allowedBranches = React.useMemo(() => {
-    // Administradores pueden operar todas las sucursales.
     if (currentUser?.role === 'admin') return branches || [];
-
-    // En el flujo trabajador -> seleccionar empleado -> contraseña, el alcance
-    // de sucursal debe corresponder al trabajador seleccionado, no a la cuenta
-    // que inició sesión.
     const scopeUser = detectedWorker || currentUser;
-    const assignedId = scopeUser?.assignedBranchId || scopeUser?.branchId;
-    if (assignedId) {
-      return (branches || []).filter(b => b.id === assignedId);
-    }
-    if (scopeUser?.allowedBranches && scopeUser.allowedBranches.length > 0) {
-      return (branches || []).filter(b => scopeUser.allowedBranches!.includes(b.id));
-    }
-    return [];
-  }, [currentUser, detectedWorker, branches, workerAssignedBranchId]);
-    
-  const [showConfirmIDNModal, setShowConfirmIDNModal] = useState(false);
+    const ids = scopeUser?.allowedBranches || (scopeUser?.branchId ? [scopeUser.branchId] : []);
+    return (branches || []).filter(b => ids.includes(b.id));
+  }, [currentUser, detectedWorker, branches]);
 
   const [sessionBranchId, setSessionBranchId] = useState<string>(
     currentBranchId || ((allowedBranches || []).length > 0 ? allowedBranches[0].id : "")
   );
-
-  const handleCloseIDNAccount = () => {
-    const targetWorker = activeIDNWorker;
-    const branchId = activeIDNBranchId;
-    if (!targetWorker) {
-      setPosError("No se ha seleccionado ningún vendedor independiente.");
-      return;
-    }
-    if (!branchId) {
-      setPosError("El vendedor no tiene un almacén asignado para liquidar.");
-      return;
-    }
-    setShowConfirmIDNModal(true);
-  };
-
-  const handleExecuteIDNSettlement = async () => {
-    const targetWorker = activeIDNWorker;
-    const branchId = activeIDNBranchId;
-    if (!targetWorker || !branchId) {
-      setShowConfirmIDNModal(false);
-      return;
-    }
-
-    setIsProcessingIDN(true);
-    try {
-      const settlementDetails: any[] = [];
-      let totalToPay = 0;
-
-      const branchInventory = (inventory || []).filter(i => i.branchId === branchId);
-      
-      for (const invItem of branchInventory) {
-        const product = (products || []).find(p => p.id === invItem.productId);
-        if (!product) continue;
-
-        const settlementPrice = (idnSettlementPrices || []).find(
-          sp => sp.userId === targetWorker.id && sp.productId === product.id
-        )?.settlementPrice || product.costPrice || 0;
-
-        const physicalCount = idnPhysicalCounts[product.id] ?? invItem.quantity;
-        const soldQty = Math.max(0, invItem.quantity - physicalCount);
-
-        if (soldQty > 0) {
-          const subtotal = soldQty * settlementPrice;
-          totalToPay += subtotal;
-          settlementDetails.push({
-            productId: product.id,
-            name: product.name,
-            sku: product.sku,
-            qty: soldQty,
-            publicPrice: product.price || 0,
-            price: settlementPrice,
-            subtotal
-          });
-        } else if (physicalCount > invItem.quantity) {
-          // If physical count was manually increased above system stock without sales, update stock directly
-          setInventoryQuantity(product.id, branchId, physicalCount);
-        }
-      }
-
-      // Permitir liquidación con 0 ventas o 0 CUP de acuerdo a la solicitud del usuario
-      const currentTransactions = useStore.getState().transactions.filter(t => !t.deletedAt);
-      const maxIdnNum = currentTransactions.reduce((max, t) => {
-        const match = t.id?.match(/LIQ-IDN-(\d+)/i);
-        return match ? Math.max(max, parseInt(match[1], 10)) : max;
-      }, 0);
-      const nextIdnNum = Math.max(currentTransactions.length, maxIdnNum) + 1;
-      // El número visible sigue siendo legible, pero el ID físico incluye una
-      // huella aleatoria para evitar colisiones entre POS/tablets trabajando offline.
-      const idnSerial = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase();
-      const idnTxId = `LIQ-IDN-${nextIdnNum.toString().padStart(2, '0')}-${idnSerial}`;
-
-      const transaction: Transaction = {
-        id: idnTxId,
-        items: settlementDetails.map(d => ({
-          id: crypto.randomUUID(),
-          product: (products || []).find(p => p.id === d.productId) || {
-            id: d.productId,
-            name: d.name,
-            price: d.publicPrice,
-            costPrice: d.price,
-            sku: d.sku || 'IDN'
-          } as any,
-          quantity: d.qty,
-          price: d.price,
-          total: d.subtotal
-        })),
-        total: totalToPay,
-        date: new Date().toISOString(),
-        paymentMethod: 'cash',
-        payments: [{
-          method: 'cash',
-          amount: totalToPay,
-          currencyCode: baseCurrency.code,
-          exchangeRate: 1
-        }],
-        branchId: branchId,
-        userId: targetWorker.id,
-        cashierName: targetWorker.name,
-        sessionId: currentSession?.id,
-        notes: 'LIQUIDACION_IDN',
-        status: 'completed'
-      };
-
-      // La liquidación IDN debe quedar confirmada o durablemente encolada
-      // antes de mostrar éxito y, especialmente, antes de cerrar el turno.
-      const saved = await useStore.getState().processTransaction(transaction);
-      if (!saved) {
-        setPosError('La liquidación IDN no fue confirmada. El turno permanece abierto y la operación sigue protegida para reintento.');
-        return;
-      }
-
-      const branchName = branches.find(b => b.id === branchId)?.name || 'Almacén Asignado';
-      const totalPublicSales = settlementDetails.reduce((sum, d) => sum + ((d.publicPrice || d.price) * d.qty), 0);
-      const receiptData = {
-        tx: transaction,
-        details: settlementDetails,
-        workerName: targetWorker.name || 'Vendedor IDN',
-        branchName: branchName,
-        totalToPay: totalToPay,
-        publicSales: totalPublicSales,
-        date: transaction.date
-      };
-
-      setShowIDNReceiptModal(receiptData);
-      setIdnPhysicalCounts({});
-      setPosSuccess(`Liquidación de ${targetWorker.name} procesada correctamente.`);
-      setTimeout(() => setPosSuccess(""), 3500);
-      setShowConfirmIDNModal(false);
-    } catch (err) {
-      console.error("Error in IDN settlement:", err);
-      setPosError("Error al procesar la liquidación.");
-    } finally {
-      setIsProcessingIDN(false);
-    }
-  };
-
-  const handlePrintIDNThermal = async (data: typeof showIDNReceiptModal) => {
-    if (!data) return;
-    try {
-      const lines: string[] = [
-        `CENTER|BOLD|${receiptConfig.businessName || 'MARÉ'}`,
-        "CENTER|VALE DE LIQUIDACION IDN",
-        `VENDEDOR: ${(data.workerName || 'VENDEDOR').toUpperCase()}`,
-        `ALMACEN: ${(data.branchName || 'ALMACEN').toUpperCase()}`,
-        `FECHA: ${new Date(data.date).toLocaleString()}`,
-        "---",
-        "BOLD|DETALLE DE VENTAS (CUP):",
-      ];
-      (data.details || []).forEach(d => {
-        const label = `${d.qty}x ${(d.name || '').slice(0, 16)}`;
-        const val = `${baseCurrency.symbol}${d.subtotal.toLocaleString()} CUP`;
-        const spaceCount = Math.max(1, 32 - label.length - val.length);
-        lines.push(`${label}${" ".repeat(spaceCount)}${val}`);
-      });
-      lines.push("---");
-      lines.push(`BOLD|TOTAL LIQUIDAR: ${baseCurrency.symbol}${data.totalToPay.toLocaleString()} CUP`);
-      lines.push("---");
-      lines.push("CENTER|CUADRE REALIZADO CON EXITO");
-      await printThermalReceiptDirect({
-        lines,
-        width: (receiptConfig.printerWidth || '58mm') as '58mm' | '80mm'
-      });
-      setPosSuccess("Vale de liquidación enviado a la impresora.");
-      setTimeout(() => setPosSuccess(""), 3000);
-    } catch (printErr: any) {
-      console.warn("Thermal print error:", printErr);
-      setPosError(printErr?.message || "No se pudo imprimir el ticket.");
-      setTimeout(() => setPosError(""), 3500);
-    }
-  };
 
   const [deductFromSalary, setDeductFromSalary] = useState(false);
 
   const [showCancelShiftModal, setShowCancelShiftModal] = useState(false);
   const [cancelShiftPassword, setCancelShiftPassword] = useState("");
   const [isCancellingShift, setIsCancellingShift] = useState(false);
-  const [isExitingIDN, setIsExitingIDN] = useState(false);
-  const [isFinishingIDN, setIsFinishingIDN] = useState(false);
 
   const handleCancelShift = async () => {
     if (!currentSession || isCancellingShift) return;
@@ -678,7 +391,6 @@ export default function POS() {
       setPosSuccess("Liquidación completada. Sesión cerrada.");
       setTimeout(() => setPosSuccess(""), 3000);
     } catch (err: any) {
-      console.error("[POS] Error finalizando liquidación IDN:", err);
       setPosError(err?.message || "No se pudo finalizar la liquidación.");
     } finally {
       setIsFinishingIDN(false);
@@ -698,7 +410,6 @@ export default function POS() {
           : undefined
       );
 
-      // "Cancelar / Salir" del flujo IDN cancela el turno únicamente cuando
       // todavía no existen ventas confirmadas. Nunca se deben borrar ventas
       // silenciosamente desde este botón.
       const sessionTransactions = session
@@ -715,7 +426,6 @@ export default function POS() {
       if (session) {
         const cancelled = await useStore.getState().cancelSession(
           session.id,
-          'Cancelación del POS IDN antes de registrar ventas'
         );
         if (!cancelled) {
           setPosError("No se pudo cancelar el turno. La operación no fue confirmada.");
@@ -743,7 +453,6 @@ export default function POS() {
       setPosSuccess("Punto de venta cancelado. Turno cancelado correctamente. Regresando al selector de empleado.");
       setTimeout(() => setPosSuccess(""), 3000);
     } catch (err: any) {
-      console.error("[POS] Error al cancelar/salir del flujo IDN:", err);
       setPosError(err?.message || "No se pudo cancelar y salir del punto de venta.");
     } finally {
       setIsExitingIDN(false);
@@ -762,7 +471,6 @@ export default function POS() {
       return;
     }
 
-    const existing = (idnSettlementPrices || []).find(
       p => p.userId === activeIDNWorker.id && p.productId === idnPriceFormProduct
     );
 
@@ -1762,7 +1470,6 @@ export default function POS() {
     }, 0);
 
     const employee = users.find(u => u.id === session.userId || u.name === session.workerName) || users.find(u => u.name?.toLowerCase() === session.workerName?.toLowerCase()) || users.find(u => u.role === 'employee') || currentUser;
-    const isIndependent = employee?.isIndependent || false;
 
     // Calculate total cost for shop (what the independent seller owes the shop)
     const totalShopCost = sessionTx.reduce((sum, tx) => {
@@ -1774,8 +1481,8 @@ export default function POS() {
       }, 0);
     }, 0);
 
-    const baseSalary = isIndependent ? 0 : (employee?.baseSalary || 0);
-    const totalSalary = isIndependent ? 0 : (baseSalary + commissions);
+    const baseSalary = employee?.baseSalary || 0;
+    const totalSalary = baseSalary + commissions;
 
     const lines: string[] = [];
     lines.push(`CENTER|BOLD|${receiptConfig.businessName || 'MARÉ POS'}`);
@@ -1786,7 +1493,7 @@ export default function POS() {
     lines.push(`TURNO: ${session.id}`);
     lines.push(`FECHA: ${new Date(session.closingDate || session.closedAt || new Date()).toLocaleDateString()}`);
     lines.push(`HORA: ${new Date(session.closingDate || session.closedAt || new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
-    lines.push(`VENDEDOR: ${(session.workerName || 'VENDEDOR').toUpperCase()}${isIndependent ? ' (IND)' : ''}`);
+    lines.push(`VENDEDOR: ${(session.workerName || 'VENDEDOR').toUpperCase()}`);
     lines.push(`SUCURSAL: ${(branches.find(b => b.id === session.branchId)?.name || 'Central').slice(0, 18)}`);
     lines.push("---");
     lines.push("BOLD|PRODUCTOS VENDIDOS:");
@@ -1807,12 +1514,7 @@ export default function POS() {
     lines.push(`ITEMS TOTALES: ${soldList.reduce((s, i) => s + i.qty, 0)}`);
     lines.push("---");
 
-    if (isIndependent) {
-      lines.push("BOLD|LIQUIDACION INDEPENDIENTE:");
-      const shopLabel = "Costo Fijo Tienda:";
-      const shopVal = formatMoney(totalShopCost, baseCurrency.symbol);
-      lines.push(`${shopLabel}${" ".repeat(Math.max(1, 32 - shopLabel.length - shopVal.length))}${shopVal}`);
-} else {
+    {
       lines.push("BOLD|NOMINA / COMISIONES:");
       const salLabel = "Salario Base:";
       const salVal = formatMoney(baseSalary, baseCurrency.symbol);
@@ -2022,20 +1724,6 @@ export default function POS() {
       setShowOpenShiftModal(true);
       return;
     }
-    // Defensa en profundidad: una cuenta IDN nunca puede vender usando un
-    // turno o almacén que pertenezca a otra identidad/sucursal.
-    if (isCurrentUserIndependent && currentUser?.id) {
-      const assignedBranchId = currentUser.assignedBranchId || currentUser.branchId ||
-        (currentUser.allowedBranches?.length === 1 ? currentUser.allowedBranches[0] : null);
-      const ownsSession = currentSession.userId === currentUser.id ||
-        currentSession.workingEmployeeIds?.includes(currentUser.id);
-      const ownsBranch = !assignedBranchId || currentSession.branchId === assignedBranchId;
-      if (!ownsSession || !ownsBranch) {
-        setPosError('Tu cuenta IDN solo puede vender en tu propio turno y almacén asignado.');
-        setShowOpenShiftModal(true);
-        return;
-      }
-    }
     if (!Number.isFinite(totalBase) || totalBase <= 0) {
       setPosError('El total de la venta no es válido.');
       return;
@@ -2097,18 +1785,10 @@ export default function POS() {
       const match = t.id?.match(/TIKECT ID-MARE(\d+)/i);
       return match ? Math.max(max, parseInt(match[1], 10)) : max;
     }, 0);
-    const activeSellerId = isCurrentUserIndependent
-      ? currentUser?.id || currentSession.userId || 'u1'
-      : currentSession.userId || currentUser?.id || 'u1';
-    const activeSellerName = isCurrentUserIndependent
-      ? currentUser?.name || currentSession.workerName || 'Vendedor'
-      : currentSession.workerName || currentUser?.name || 'Vendedor';
+    const activeSellerId = currentSession.userId || currentUser?.id || 'u1';
+    const activeSellerName = currentSession.workerName || currentUser?.name || 'Vendedor';
     const sellerUser = (users || []).find(u => u.id === activeSellerId) || currentUser;
-    const assignedIdnBranch = isCurrentUserIndependent
-      ? (currentUser?.assignedBranchId || currentUser?.branchId ||
-        (currentUser?.allowedBranches?.length === 1 ? currentUser.allowedBranches[0] : null))
-      : null;
-    const effectiveBranchId = assignedIdnBranch || currentSession.branchId || sellerUser?.assignedBranchId || currentBranchId || (branches[0]?.id || 'b1');
+    const effectiveBranchId = currentSession.branchId || sellerUser?.branchId || currentBranchId || (branches[0]?.id || '');
 
     // El número visible conserva legibilidad, pero el ID físico del ticket debe
     // ser globalmente único entre dispositivos. Nunca usamos solo el contador local:
@@ -2242,9 +1922,7 @@ export default function POS() {
         return;
       }
 
-      const workerToAssign = isCurrentUserIndependent
-        ? users.find(u => u.id === currentUser?.id && u.isIndependent === true) || currentUser
-        : ((sessionWorkerId && users.find(u => u.id === sessionWorkerId)) ||
+      const workerToAssign = ((sessionWorkerId && users.find(u => u.id === sessionWorkerId)) ||
           detectedWorker ||
           users.find(u => (u.name || '').trim().toLowerCase() === trimmedWorkerName.toLowerCase()) ||
           null);
@@ -2258,13 +1936,7 @@ export default function POS() {
       // La identidad que opera el POS se determina por el trabajador seleccionado
       // y se autentica con la contraseña de ESE trabajador.
       // La sucursal queda limitada a las sucursales asignadas al trabajador seleccionado.
-      const workerBranchIds = new Set(
-        workerToAssign.assignedBranchId
-          ? [workerToAssign.assignedBranchId]
-          : workerToAssign.branchId
-            ? [workerToAssign.branchId]
-            : (workerToAssign.allowedBranches || [])
-      );
+      const workerBranchIds = new Set(workerToAssign.allowedBranches || (workerToAssign.branchId ? [workerToAssign.branchId] : []));
       const permittedBranchIds = currentUser?.role === 'admin'
         ? new Set((branches || []).map(b => b.id))
         : workerBranchIds;
@@ -2399,23 +2071,12 @@ export default function POS() {
     }
 
     if (isCurrentUserIndependent) {
-      const assignedBranchId = currentUser?.assignedBranchId || currentUser?.branchId ||
-        (currentUser?.allowedBranches?.length === 1 ? currentUser.allowedBranches[0] : null);
-      const ownIdentity = targetSession.userId === currentUser?.id ||
-        targetSession.workingEmployeeIds?.includes(currentUser?.id || '');
-      const ownBranch = !assignedBranchId || targetSession.branchId === assignedBranchId;
-      if (!ownIdentity || !ownBranch) {
-        setPosError('Una cuenta IDN solo puede reanudar su propio turno en su almacén asignado.');
-        return;
-      }
+  
     }
 
     const targetBranchIds = new Set(
-      targetUser.assignedBranchId
-        ? [targetUser.assignedBranchId]
-        : targetUser.branchId
-          ? [targetUser.branchId]
-          : (targetUser.allowedBranches || [])
+        ? [targetUser.branchId]
+        : (targetUser.allowedBranches || [])
     );
 
     if (targetBranchIds.size > 0 && !targetBranchIds.has(targetSession.branchId) && currentUser?.role !== 'admin') {
@@ -2457,14 +2118,7 @@ export default function POS() {
     setNewCustomer({ name: '', phone: '', email: '', taxId: '' });
   };
 
-  if (shouldShowIDNView && currentSession) {
-    const branchId = activeIDNBranchId;
-    const branchInventory = (inventory || []).filter(i => i.branchId === branchId);
-    const filterLower = (debouncedIdnFilter || '').toLowerCase().trim();
-    const filteredInventory = branchInventory
-      .filter(inv => {
-        const p = (products || []).find(prod => prod.id === inv.productId);
-        return (p?.name || '').toLowerCase().includes(filterLower) || 
+  return (p?.name || '').toLowerCase().includes(filterLower) || 
                (p?.sku || '').toLowerCase().includes(filterLower);
       })
       .slice(0, 100); // Limit to 100 products for performance
@@ -2475,11 +2129,9 @@ export default function POS() {
 
     filteredInventory.forEach(inv => {
       const p = (products || []).find(prod => prod.id === inv.productId);
-      const settlementPrice = (idnSettlementPrices || []).find(
         sp => sp.userId === activeIDNWorker?.id && sp.productId === inv.productId
       )?.settlementPrice || p?.costPrice || 0;
 
-      const physicalCount = idnPhysicalCounts[inv.productId] ?? inv.quantity;
       const soldQty = Math.max(0, inv.quantity - physicalCount);
       currentTotalToPay += soldQty * settlementPrice;
       currentTotalPublicSales += soldQty * (p?.price || 0);
@@ -2488,22 +2140,18 @@ export default function POS() {
 
     return (
       <div className="flex flex-col h-full bg-primary">
-        {/* Header IDN */}
         <header className="bg-secondary text-primary p-3 sm:p-4 flex items-center justify-between shadow-lg flex-wrap gap-3 border-b border-base">
           <div 
-            onClick={currentUser?.isIndependent ? undefined : handleCancelAndReturnToEmployeeSelector}
             className={cn(
               "flex items-center gap-3",
-              !currentUser?.isIndependent && "cursor-pointer hover:bg-slate-800/80 p-1.5 -m-1.5 rounded-2xl transition-all border border-transparent hover:border-amber-500/30 group select-none"
             )}
             title="Hacer clic para cancelar punto de venta y volver al selector de empleado (sin contar ni descontar nada)"
           >
-            <div className="bg-amber-500 p-2 rounded-xl text-white shadow-md shadow-amber-500/30 group-hover:bg-rose-600 transition-colors">
+            <div className="bg-rose-500 p-2 rounded-xl text-white shadow-md shadow-rose-500/30 group-hover:bg-rose-600 transition-colors">
               <Package className="w-5 h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-sm font-black uppercase tracking-tight">Liquidación de Inventario IDN</h1>
                 <span className="text-[8px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 py-0.5 rounded uppercase group-hover:bg-rose-600 group-hover:text-white transition-all">
                   ✕ Cancelar
                 </span>
@@ -2511,7 +2159,7 @@ export default function POS() {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] font-bold text-slate-300 uppercase">{activeIDNWorker?.name || 'Vendedor'}</span>
                 <span className="w-1 h-1 bg-slate-600 rounded-full"></span>
-                <div className="flex items-center gap-1 bg-amber-500/20 border border-amber-500/40 text-amber-400 px-2 py-0.5 rounded-lg">
+                <div className="flex items-center gap-1 bg-rose-500/20 border border-rose-500/40 text-amber-400 px-2 py-0.5 rounded-lg">
                   <Lock className="w-2.5 h-2.5 text-amber-400" />
                   <span className="text-[9px] font-black uppercase">
                     {branches.find(b => b.id === branchId)?.name || 'Sin Almacén Asignado'}
@@ -2529,7 +2177,6 @@ export default function POS() {
               onClick={handleCancelAndReturnToEmployeeSelector}
               disabled={isExitingIDN}
               className="px-2.5 sm:px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 rounded-xl text-[10px] sm:text-[10px] font-black uppercase transition-all shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-              title="Cancelar el flujo IDN y volver al selector de empleado"
             >
               {isExitingIDN ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
               <span>{isExitingIDN ? "Saliendo..." : "Cancelar / Salir"}</span>
@@ -2541,7 +2188,6 @@ export default function POS() {
               <div className="flex items-center gap-1.5 bg-slate-800 px-2 py-1 rounded-xl border border-slate-700">
                 <span className="text-[8px] font-bold text-slate-400 uppercase hidden sm:inline">Vendedor:</span>
                 <select
-                  value={selectedAdminIDNUserId || independentUsers[0]?.id || ''}
                   onChange={e => {
                     const nextId = e.target.value;
                     if (nextId && independentUsers.some(u => u.id === nextId)) {
@@ -2552,7 +2198,6 @@ export default function POS() {
                   className="bg-transparent text-amber-400 text-[10px] font-black uppercase outline-none cursor-pointer"
                 >
                   {independentUsers.map(u => {
-                    const bName = branches.find(br => br.id === u.assignedBranchId)?.name || 'Sin Almacén';
                     return (
                       <option key={u.id} value={u.id} className="bg-slate-800 text-white">
                         {u.name} ({bName})
@@ -2568,23 +2213,22 @@ export default function POS() {
               <button
                 type="button"
                 onClick={() => setPosViewMode('standard')}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[9px] font-black uppercase transition-all shadow-sm flex items-center gap-1.5 active:scale-95"
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[9px] font-black uppercase transition-all shadow-sm flex items-center gap-1.5 active:scale-95"
               >
                 <Store className="w-3.5 h-3.5" />
                 <span className="hidden xs:inline">TPV Estándar</span>
               </button>
             )}
 
-            {/* Impresora térmica: siempre visible en el POS IDN */}
             <button
               type="button"
               onClick={() => setShowPrinterSetupModal(true)}
-              className="px-2.5 sm:px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 active:scale-95 border border-indigo-500/40"
+              className="px-2.5 sm:px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 active:scale-95 border border-rose-500/40"
               title="Conectar o configurar la impresora térmica del ticket"
             >
               <Printer className="w-3.5 h-3.5" />
               <span>Impresora</span>
-              {connectedPrinterName && <span className="hidden lg:inline text-[8px] text-indigo-100 normal-case tracking-normal">Conectada</span>}
+              {connectedPrinterName && <span className="hidden lg:inline text-[8px] text-rose-100 normal-case tracking-normal">Conectada</span>}
             </button>
 
             <div className="hidden sm:flex flex-col items-end pl-2">
@@ -2609,7 +2253,6 @@ export default function POS() {
               {/* Selector directo de producto */}
               <div className="md:w-80">
                 <select
-                  value={idnSelectedProductFilter}
                   onChange={(e) => {
                     const val = e.target.value;
                     setIdnSelectedProductFilter(val);
@@ -2620,7 +2263,7 @@ export default function POS() {
                       setIdnFilter(prod?.name || '');
                     }
                   }}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-800 uppercase"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-rose-500/20 text-slate-800 uppercase"
                 >
                   <option value="all">📦 Todos los productos ({branchInventory.length})</option>
                   {branchInventory.map(inv => {
@@ -2641,12 +2284,10 @@ export default function POS() {
                 <input 
                   type="text" 
                   placeholder="Buscar por nombre o SKU..."
-                  value={idnFilter}
                   onChange={(e) => {
                     setIdnFilter(e.target.value);
-                    if (idnSelectedProductFilter !== 'all') setIdnSelectedProductFilter('all');
                   }}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-rose-500/20"
                 />
               </div>
 
@@ -2682,16 +2323,14 @@ export default function POS() {
                 <tbody className="divide-y divide-subtle">
                   {filteredInventory.map(inv => {
                     const p = (products || []).find(prod => prod.id === inv.productId);
-                    const settlementPrice = (idnSettlementPrices || []).find(
                       sp => sp.userId === activeIDNWorker?.id && sp.productId === inv.productId
                     )?.settlementPrice || p?.costPrice || 0;
 
-                    const physicalCount = idnPhysicalCounts[inv.productId] ?? inv.quantity;
                     const soldQty = Math.max(0, inv.quantity - physicalCount);
                     const subtotal = soldQty * settlementPrice;
 
                     return (
-                      <tr key={inv.id} className={cn("hover:bg-slate-50/70 transition-colors", soldQty > 0 && "bg-amber-50/40")}>
+                      <tr key={inv.id} className={cn("hover:bg-slate-50/70 transition-colors", soldQty > 0 && "bg-rose-50/40")}>
                         <td className="px-4 py-3">
                           <p className="text-[11px] font-black text-slate-900 uppercase truncate max-w-[200px]">{p?.name || 'Producto'}</p>
                           <p className="text-[8px] font-bold text-slate-400 uppercase">{p?.sku}</p>
@@ -2705,19 +2344,15 @@ export default function POS() {
                               type="number" 
                               min="0"
                               max={inv.quantity}
-                              value={idnPhysicalCounts[inv.productId] ?? inv.quantity}
                               onFocus={(e) => e.target.select()}
-                              onChange={(e) => setIdnPhysicalCounts({ ...idnPhysicalCounts, [inv.productId]: Math.max(0, Number(e.target.value)) })}
                               className={cn(
                                 "w-20 px-2 py-1.5 border rounded-lg text-center text-xs font-black outline-none focus:ring-2",
-                                (idnPhysicalCounts[inv.productId] ?? inv.quantity) < inv.quantity ? "border-amber-300 bg-amber-50 text-amber-900 ring-1 ring-amber-300" : "border-slate-200 bg-slate-50 text-slate-900",
-                                (idnPhysicalCounts[inv.productId] ?? inv.quantity) > inv.quantity && "border-rose-300 bg-rose-50 text-rose-600"
                               )}
                             />
                           </div>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <span className={cn("text-[11px] font-black px-2 py-0.5 rounded", soldQty > 0 ? "bg-amber-100 text-amber-900 font-black" : "text-slate-400")}>
+                          <span className={cn("text-[11px] font-black px-2 py-0.5 rounded", soldQty > 0 ? "bg-rose-100 text-amber-900 font-black" : "text-slate-400")}>
                             {soldQty} Uds
                           </span>
                         </td>
@@ -2729,14 +2364,14 @@ export default function POS() {
                               setIdnPriceFormAmount(settlementPrice.toString());
                               setShowSetSettlementPriceModal(true);
                             }}
-                            className="text-[10px] font-black text-indigo-700 hover:underline cursor-pointer"
+                            className="text-[10px] font-black text-rose-700 hover:underline cursor-pointer"
                             title="Haz clic para modificar precio de liquidación"
                           >
                             {baseCurrency.symbol}{settlementPrice.toLocaleString()} CUP
                           </button>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <p className={cn("text-[11px] font-black", soldQty > 0 ? "text-amber-700" : "text-slate-400")}>
+                          <p className={cn("text-[11px] font-black", soldQty > 0 ? "text-rose-700" : "text-slate-400")}>
                             {baseCurrency.symbol}{subtotal.toLocaleString()} CUP
                           </p>
                         </td>
@@ -2769,17 +2404,15 @@ export default function POS() {
                </div>
                <div className="w-px h-8 bg-slate-200 hidden sm:block"></div>
                <div className="text-left">
-                 <p className="text-[8px] font-black text-amber-700 uppercase tracking-widest">Total a Liquidar (CUP)</p>
-                 <p className="text-xl font-black text-amber-700">{baseCurrency.symbol}{currentTotalToPay.toLocaleString()} CUP</p>
+                 <p className="text-[8px] font-black text-rose-700 uppercase tracking-widest">Total a Liquidar (CUP)</p>
+                 <p className="text-xl font-black text-rose-700">{baseCurrency.symbol}{currentTotalToPay.toLocaleString()} CUP</p>
                </div>
             </div>
 
             <button 
               onClick={handleCloseIDNAccount}
-              disabled={isProcessingIDN || !branchId}
-              className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white px-8 py-3.5 rounded-xl font-black text-xs uppercase transition-all shadow-lg shadow-amber-600/20 active:scale-95 disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full sm:w-auto bg-rose-600 hover:bg-rose-700 text-white px-8 py-3.5 rounded-xl font-black text-xs uppercase transition-all shadow-lg shadow-amber-600/20 active:scale-95 disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer"
             >
-              {isProcessingIDN ? (
                 <RefreshCw className="w-4 h-4 animate-spin" />
               ) : (
                 <CheckCircle className="w-4 h-4" />
@@ -2789,17 +2422,15 @@ export default function POS() {
           </div>
         </footer>
 
-        {/* Modal Confirmar Liquidación IDN */}
         {showConfirmIDNModal && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-100 animate-in zoom-in-95">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
-                  <div className="bg-amber-100 p-2 rounded-xl text-amber-700">
+                  <div className="bg-rose-100 p-2 rounded-xl text-rose-700">
                     <Package className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black text-slate-900 uppercase">Confirmar Liquidación IDN</h3>
                     <p className="text-[10px] font-bold text-slate-400 uppercase">Vendedor: {activeIDNWorker?.name}</p>
                   </div>
                 </div>
@@ -2845,10 +2476,8 @@ export default function POS() {
                 <button
                   type="button"
                   onClick={handleExecuteIDNSettlement}
-                  disabled={isProcessingIDN}
-                  className="flex-1 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-md shadow-amber-600/20 active:scale-95 flex items-center justify-center gap-2"
+                  className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-md shadow-amber-600/20 active:scale-95 flex items-center justify-center gap-2"
                 >
-                  {isProcessingIDN ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                   Confirmar y Liquidar
                 </button>
               </div>
@@ -2856,15 +2485,13 @@ export default function POS() {
           </div>
         )}
 
-        {/* Modal Vale de Liquidación IDN (con opciones de impresión manual) */}
         {showIDNReceiptModal && (
           <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-50 overflow-hidden animate-in fade-in duration-200">
             <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl max-w-lg w-full max-h-[94vh] sm:max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 overflow-hidden">
-              <div className="text-center space-y-1 p-3.5 sm:p-4 border-b border-slate-100 dark:border-slate-800 bg-amber-50/40 dark:bg-amber-950/20 shrink-0">
-                <div className="w-10 h-10 bg-amber-100 dark:bg-amber-900/50 rounded-2xl flex items-center justify-center mx-auto text-amber-700 dark:text-amber-300 mb-1">
+              <div className="text-center space-y-1 p-3.5 sm:p-4 border-b border-slate-100 dark:border-slate-800 bg-rose-50/40 dark:bg-rose-950/20 shrink-0">
+                <div className="w-10 h-10 bg-rose-100 dark:bg-rose-900/50 rounded-2xl flex items-center justify-center mx-auto text-rose-700 dark:text-amber-300 mb-1">
                   <CheckCircle className="w-5 h-5" />
                 </div>
-                <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white uppercase">Vale de Liquidación IDN</h3>
                 <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
                   {showIDNReceiptModal.workerName} • {showIDNReceiptModal.branchName}
                 </p>
@@ -2893,7 +2520,7 @@ export default function POS() {
                             {item.qty} uds × {baseCurrency.symbol}{item.price.toLocaleString()} CUP
                           </p>
                         </div>
-                        <span className="font-mono font-black text-amber-700 dark:text-amber-400 text-xs shrink-0">
+                        <span className="font-mono font-black text-rose-700 dark:text-amber-400 text-xs shrink-0">
                           {baseCurrency.symbol}{item.subtotal.toLocaleString()} CUP
                         </span>
                       </div>
@@ -2902,10 +2529,10 @@ export default function POS() {
                 </div>
 
                 {/* Gran Total */}
-                <div className="bg-amber-50 dark:bg-amber-950/40 p-3 rounded-xl border border-amber-200 dark:border-amber-900/60 flex justify-between items-center">
+                <div className="bg-rose-50 dark:bg-rose-950/40 p-3 rounded-xl border border-amber-200 dark:border-amber-900/60 flex justify-between items-center">
                   <div>
                     <span className="text-[8px] sm:text-[9px] font-black uppercase text-amber-800 dark:text-amber-300 tracking-wider block">Total Entregado / Liquidado</span>
-                    <span className="text-[8px] text-amber-700 dark:text-amber-400">Precio liquidación pactado</span>
+                    <span className="text-[8px] text-rose-700 dark:text-amber-400">Precio liquidación pactado</span>
                   </div>
                   <span className="text-base sm:text-lg font-black text-amber-800 dark:text-amber-300 font-mono">
                     {baseCurrency.symbol}{showIDNReceiptModal.totalToPay.toLocaleString()} CUP
@@ -2931,7 +2558,7 @@ export default function POS() {
                   type="button"
                   onClick={handleFinishIDNAndGoHome}
                   disabled={isFinishingIDN}
-                  className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black text-[11px] sm:text-xs uppercase tracking-widest transition-all shadow-md shadow-amber-600/20 active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-[11px] sm:text-xs uppercase tracking-widest transition-all shadow-md shadow-amber-600/20 active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isFinishingIDN ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   <span>{isFinishingIDN ? "Finalizando..." : "Finalizar y Volver al Inicio"}</span>
@@ -3002,7 +2629,7 @@ export default function POS() {
           {joiningSessionId ? (
             /* Modal Formulario de Ingreso a Turno Abierto Existente */
             <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-[2rem] shadow-2xl text-center max-w-sm w-full animate-in zoom-in-95 border border-white/20">
-              <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950/40 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-12 h-12 bg-rose-50 dark:bg-rose-950/40 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Lock className="w-6 h-6 text-amber-600" />
               </div>
               <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight leading-none mb-1">
@@ -3033,7 +2660,7 @@ export default function POS() {
                       setPosError("");
                     }}
                     placeholder="Ingresa la contraseña"
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 dark:bg-slate-800 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 dark:bg-slate-800 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
 
@@ -3051,7 +2678,7 @@ export default function POS() {
                   </button>
                   <button
                     type="submit"
-                    className="py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-[10px] uppercase tracking-wider transition-all shadow-sm"
+                    className="py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-[10px] uppercase tracking-wider transition-all shadow-sm"
                   >
                     Entrar al Turno
                   </button>
@@ -3114,7 +2741,7 @@ export default function POS() {
                     <button
                       type="button"
                       onClick={() => setShowOpenShiftModal(true)}
-                      className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[9px] uppercase tracking-widest transition-all shadow-lg shadow-indigo-100 active:scale-95 flex items-center justify-center gap-2"
+                      className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-[9px] uppercase tracking-widest transition-all shadow-lg shadow-rose-100 active:scale-95 flex items-center justify-center gap-2"
                     >
                       <DollarSign className="w-3.5 h-3.5" />
                       Abrir Nuevo Turno / Caja
@@ -3144,8 +2771,8 @@ export default function POS() {
                 /* Modal Formulario de Apertura de Caja */
                 <div className="bg-white p-3 sm:p-4 rounded-2xl sm:rounded-[1.5rem] shadow-2xl text-center w-full max-w-[min(94vw,31rem)] max-h-[92dvh] overflow-y-auto animate-in zoom-in-95 border border-white/20 my-auto">
                   <div className="flex items-center justify-center gap-2 mb-1.5">
-                    <div className="w-8 h-8 sm:w-9 sm:h-9 bg-indigo-50 rounded-xl flex items-center justify-center shrink-0">
-                      <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600" />
+                    <div className="w-8 h-8 sm:w-9 sm:h-9 bg-rose-50 rounded-xl flex items-center justify-center shrink-0">
+                      <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-rose-600" />
                     </div>
                     <div className="min-w-0 text-left">
                       <h3 className="text-base sm:text-lg font-black text-slate-900 uppercase tracking-tight leading-none">Apertura de Caja</h3>
@@ -3206,7 +2833,7 @@ export default function POS() {
                                   setEmployeePickerOpen(true);
                                 }}
                                 placeholder="Presiona y busca el nombre del empleado..."
-                                className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px] font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                                className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px] font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500 transition-all"
                                 autoComplete="off"
                               />
                               {employeePickerOpen ? (
@@ -3239,7 +2866,6 @@ export default function POS() {
                                     })
                                     .map(u => {
                                       const isSelected = sessionWorkerName === (u.name || '');
-                                      const isIdn = u.isIndependent === true;
                                       const open = openSessionForWorker(u.id);
                                       return (
                                         <button
@@ -3254,14 +2880,13 @@ export default function POS() {
                                             setEmployeePickerSearch(workerName);
                                             setEmployeePickerOpen(false);
                                             setSessionPassword('');
-                                            if (u.assignedBranchId) setSessionBranchId(u.assignedBranchId);
                                             else if (u.branchId) setSessionBranchId(u.branchId);
                                             else if ((u.allowedBranches || []).length === 1) setSessionBranchId(u.allowedBranches![0]);
                                             setPosError('');
                                           }}
                                           className={cn(
                                             "w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left transition-colors",
-                                            isSelected ? "bg-indigo-100 text-indigo-900" : "hover:bg-slate-50 text-slate-900"
+                                            isSelected ? "bg-rose-100 text-rose-900" : "hover:bg-slate-50 text-slate-900"
                                           )}
                                         >
                                           <div className="min-w-0">
@@ -3270,9 +2895,8 @@ export default function POS() {
                                             </span>
                                             <span className={cn(
                                               "block text-[7px] font-black uppercase tracking-wider mt-0.5",
-                                              isIdn ? "text-amber-700" : "text-slate-400"
+                                              isIdn ? "text-rose-700" : "text-slate-400"
                                             )}>
-                                              {isIdn ? "VENDEDOR IDN" : (u.role === 'admin' ? "ADMINISTRADOR" : "EMPLEADO")}
                                             </span>
                                           </div>
                                           <span className={cn(
@@ -3298,13 +2922,12 @@ export default function POS() {
                           </div>
 
                           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pt-0.5 text-[7px] font-black uppercase tracking-wider">
-                            <span className="inline-flex items-center gap-1 text-indigo-700">
-                              <span className="w-2 h-2 rounded-full bg-indigo-600" />
+                            <span className="inline-flex items-center gap-1 text-rose-700">
+                              <span className="w-2 h-2 rounded-full bg-rose-600" />
                               EMPLEADO
                             </span>
-                            <span className="inline-flex items-center gap-1 text-amber-700">
-                              <span className="w-2 h-2 rounded-full bg-amber-500" />
-                              VENDEDOR IDN
+                            <span className="inline-flex items-center gap-1 text-rose-700">
+                              <span className="w-2 h-2 rounded-full bg-rose-500" />
                             </span>
                             <span className="inline-flex items-center gap-1 text-emerald-700">
                               <span className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -3317,7 +2940,6 @@ export default function POS() {
 
                       <div>
                         <label className="block text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                          {isCurrentUserIndependent ? 'Contraseña de tu cuenta IDN' : 'Contraseña del Vendedor Seleccionado'}
                         </label>
                         <input
                           type="password"
@@ -3326,16 +2948,15 @@ export default function POS() {
                           value={sessionPassword}
                           onChange={e => setSessionPassword(e.target.value)}
                           placeholder={detectedWorker ? `Ingresa la contraseña de ${detectedWorker?.name || 'trabajador'}` : "Ingresa la contraseña del trabajador"}
-                          className="w-full px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                          className="w-full px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500 transition-all"
                         />
                       </div>
                     </div>
 
                     {isWorkerIndependent && (
-                      <div className="p-1.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-1.5 text-left">
+                      <div className="p-1.5 bg-rose-50 border border-amber-200 rounded-xl flex items-center gap-1.5 text-left">
                         <Package className="w-3 h-3 text-amber-600 shrink-0" />
                         <p className="text-[8px] font-black text-amber-800 uppercase tracking-tight">
-                          Vendedor Independiente (IDN) • Almacén exclusivo bloqueado
                         </p>
                       </div>
                     )}
@@ -3349,7 +2970,7 @@ export default function POS() {
                               Sucursal / Almacén a Operar
                             </label>
                             {isBranchLocked && (
-                              <span className="flex items-center gap-1 text-[8px] font-black text-amber-700 uppercase bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
+                              <span className="flex items-center gap-1 text-[8px] font-black text-rose-700 uppercase bg-rose-100 px-1.5 py-0.5 rounded border border-amber-300">
                                 <Lock className="w-2.5 h-2.5" /> Bloqueado
                               </span>
                             )}
@@ -3359,8 +2980,8 @@ export default function POS() {
                             disabled={isBranchLocked}
                             onChange={(e) => setSessionBranchId(e.target.value)}
                             className={cn(
-                              "w-full px-4 py-3 border rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none",
-                              isBranchLocked ? "bg-amber-50/70 border-amber-200 cursor-not-allowed text-amber-900 font-black" : "bg-slate-50 border-slate-100"
+                              "w-full px-4 py-3 border rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500 transition-all appearance-none",
+                              isBranchLocked ? "bg-rose-50/70 border-amber-200 cursor-not-allowed text-amber-900 font-black" : "bg-slate-50 border-slate-100"
                             )}
                           >
                             {allowedBranches.map(b => (
@@ -3368,7 +2989,7 @@ export default function POS() {
                             ))}
                           </select>
                           {isBranchLocked && (
-                            <p className="text-[8px] font-bold text-amber-700 mt-1 uppercase">
+                            <p className="text-[8px] font-bold text-rose-700 mt-1 uppercase">
                               El vendedor tiene un almacén fijo asignado y no puede vender desde otro almacén.
                             </p>
                           )}
@@ -3392,7 +3013,7 @@ export default function POS() {
                               value={openingAmount}
                               onFocus={(e) => e.target.select()}
                               onChange={e => setOpeningAmount(e.target.value)}
-                              className="w-full pl-14 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-lg font-black text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                              className="w-full pl-14 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-lg font-black text-slate-900 outline-none focus:ring-2 focus:ring-rose-500 transition-all"
                               placeholder="0.00"
                             />
                           </div>
@@ -3402,7 +3023,7 @@ export default function POS() {
                           <button 
                             type="submit"
                             disabled={isOpeningSession}
-                            className="w-full py-3 sm:py-3.5 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                            className="w-full py-3 sm:py-3.5 bg-rose-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all shadow-xl shadow-rose-100 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
                           >
                             {isOpeningSession ? "Abriendo Caja..." : "Abrir Caja y Comenzar"}
                           </button>
@@ -3466,14 +3087,13 @@ export default function POS() {
 
               {/* Turnos Abiertos en Curso (Evita duplicidad y permite reanudar con contraseña) */}
               {(() => {
-                // Las cuentas IDN no deben ver ni poder escoger turnos de terceros.
                 if (isCurrentUserIndependent) return null;
                 const otherOpenSessions = (activeCashSessions || []).filter(s => s.status === 'open');
                 if (otherOpenSessions.length === 0) return null;
                 return (
                   <div className="bg-white dark:bg-slate-900 p-4 rounded-[2rem] shadow-xl border border-slate-100 dark:border-slate-800 text-left max-w-sm w-full mt-2 shrink-0">
-                    <span className="text-[8px] font-black uppercase text-indigo-600 tracking-wider flex items-center gap-1.5 mb-2.5">
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin-slow text-indigo-500" />
+                    <span className="text-[8px] font-black uppercase text-rose-600 tracking-wider flex items-center gap-1.5 mb-2.5">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin-slow text-rose-500" />
                       Turnos Abiertos Actualmente
                     </span>
                     <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
@@ -3494,7 +3114,7 @@ export default function POS() {
                               setJoiningSessionPassword("");
                               setPosError("");
                             }}
-                            className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400 font-black text-[8px] uppercase tracking-wide rounded-lg transition-all active:scale-95 cursor-pointer shrink-0"
+                            className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 font-black text-[8px] uppercase tracking-wide rounded-lg transition-all active:scale-95 cursor-pointer shrink-0"
                           >
                             Reanudar
                           </button>
@@ -3556,7 +3176,7 @@ export default function POS() {
           <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 border border-white/20 flex flex-col max-h-[90vh]">
             <div className="p-4 border-b border-slate-50 flex items-center justify-between bg-slate-900 text-white shrink-0">
               <div className="flex items-center gap-2">
-                <Receipt className="w-4 h-4 text-indigo-400" />
+                <Receipt className="w-4 h-4 text-rose-400" />
                 <h3 className="text-xs font-black uppercase tracking-widest">Caja y Ventas del Turno</h3>
               </div>
               <button 
@@ -3572,7 +3192,7 @@ export default function POS() {
                 onClick={() => setCashManagementTab('movements')}
                 className={cn(
                   "flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest transition-colors",
-                  cashManagementTab === 'movements' ? "text-indigo-600 border-b-2 border-indigo-600 bg-white" : "text-slate-400 hover:text-slate-600"
+                  cashManagementTab === 'movements' ? "text-rose-600 border-b-2 border-rose-600 bg-white" : "text-slate-400 hover:text-slate-600"
                 )}
               >
                 Movimientos
@@ -3581,7 +3201,7 @@ export default function POS() {
                 onClick={() => setCashManagementTab('sales')}
                 className={cn(
                   "flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest transition-colors",
-                  cashManagementTab === 'sales' ? "text-indigo-600 border-b-2 border-indigo-600 bg-white" : "text-slate-400 hover:text-slate-600"
+                  cashManagementTab === 'sales' ? "text-rose-600 border-b-2 border-rose-600 bg-white" : "text-slate-400 hover:text-slate-600"
                 )}
               >
                 Ventas del Turno
@@ -3590,7 +3210,7 @@ export default function POS() {
                 onClick={() => setCashManagementTab('close')}
                 className={cn(
                   "flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest transition-colors",
-                  cashManagementTab === 'close' ? "text-indigo-600 border-b-2 border-indigo-600 bg-white" : "text-slate-400 hover:text-slate-600"
+                  cashManagementTab === 'close' ? "text-rose-600 border-b-2 border-rose-600 bg-white" : "text-slate-400 hover:text-slate-600"
                 )}
               >
                 Arqueo y Cierre
@@ -3607,7 +3227,7 @@ export default function POS() {
                         <select 
                           value={movementData.type}
                           onChange={e => setMovementData({...movementData, type: e.target.value as any})}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-rose-500"
                         >
                           <option value="expense">Egreso (Gasto)</option>
                           <option value="income">Ingreso (Entrada)</option>
@@ -3618,7 +3238,7 @@ export default function POS() {
                         <select 
                           value={movementData.currencyCode}
                           onChange={e => setMovementData({...movementData, currencyCode: e.target.value})}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-rose-500"
                         >
                           {currencies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
                         </select>
@@ -3634,7 +3254,7 @@ export default function POS() {
                           value={movementData.amount}
                           onFocus={(e) => e.target.select()}
                           onChange={e => setMovementData({...movementData, amount: e.target.value})}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black outline-none focus:ring-2 focus:ring-rose-500"
                           placeholder="0.00"
                         />
                       </div>
@@ -3645,12 +3265,12 @@ export default function POS() {
                           required
                           value={movementData.description}
                           onChange={e => setMovementData({...movementData, description: e.target.value})}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black outline-none focus:ring-2 focus:ring-rose-500"
                           placeholder="Ej: Pago de almuerzo"
                         />
                       </div>
                     </div>
-                    <button type="submit" className="w-full py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-100">
+                    <button type="submit" className="w-full py-2 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-700 transition-colors shadow-md shadow-rose-100">
                       Registrar Movimiento
                     </button>
                   </form>
@@ -3837,8 +3457,8 @@ export default function POS() {
                             </span>
                           </div>
 
-                          <div className="bg-amber-50/80 border border-amber-100 rounded-xl p-2.5 flex flex-col justify-between shadow-sm">
-                            <div className="flex items-center justify-between text-amber-700 mb-1">
+                          <div className="bg-rose-50/80 border border-amber-100 rounded-xl p-2.5 flex flex-col justify-between shadow-sm">
+                            <div className="flex items-center justify-between text-rose-700 mb-1">
                               <span className="text-[8px] font-black uppercase tracking-wider">Efectivo USD</span>
                               <DollarSign className="w-3.5 h-3.5" />
                             </div>
@@ -3862,16 +3482,16 @@ export default function POS() {
                             </span>
                           </div>
 
-                          <div className="bg-indigo-50/80 border border-indigo-100 rounded-xl p-2.5 flex flex-col justify-between shadow-sm">
-                            <div className="flex items-center justify-between text-indigo-700 mb-1">
+                          <div className="bg-rose-50/80 border border-rose-100 rounded-xl p-2.5 flex flex-col justify-between shadow-sm">
+                            <div className="flex items-center justify-between text-rose-700 mb-1">
                               <span className="text-[8px] font-black uppercase tracking-wider">Total Ventas</span>
                               <Package className="w-3.5 h-3.5" />
                             </div>
                             <div>
-                              <span className="text-xs font-black text-indigo-900 block truncate">
+                              <span className="text-xs font-black text-rose-900 block truncate">
                                 {formatMoney(totalSalesAmount, baseCurrency.symbol)}
                               </span>
-                              <span className="text-[8px] font-bold text-indigo-600 block">
+                              <span className="text-[8px] font-bold text-rose-600 block">
                                 {sessionTx.length} {sessionTx.length === 1 ? 'ticket' : 'tickets'}
                               </span>
                             </div>
@@ -3886,7 +3506,7 @@ export default function POS() {
                               onClick={() => setSalesSubTab('tickets')}
                               className={cn(
                                 "px-3 py-1.5 rounded-lg transition-all flex items-center gap-1",
-                                salesSubTab === 'tickets' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                                salesSubTab === 'tickets' ? "bg-white text-rose-600 shadow-sm" : "text-slate-500 hover:text-slate-800"
                               )}
                             >
                               <Receipt className="w-3 h-3" />
@@ -3896,7 +3516,7 @@ export default function POS() {
                               onClick={() => setSalesSubTab('products')}
                               className={cn(
                                 "px-3 py-1.5 rounded-lg transition-all flex items-center gap-1",
-                                salesSubTab === 'products' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                                salesSubTab === 'products' ? "bg-white text-rose-600 shadow-sm" : "text-slate-500 hover:text-slate-800"
                               )}
                             >
                               <Package className="w-3 h-3" />
@@ -3911,7 +3531,7 @@ export default function POS() {
                                 onClick={() => setSalesFilter('all')}
                                 className={cn(
                                   "px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-wider whitespace-nowrap transition-all",
-                                  salesFilter === 'all' ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                  salesFilter === 'all' ? "bg-rose-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                                 )}
                               >
                                 Todos
@@ -3920,7 +3540,7 @@ export default function POS() {
                                 onClick={() => setSalesFilter('usd')}
                                 className={cn(
                                   "px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-wider whitespace-nowrap transition-all flex items-center gap-0.5",
-                                  salesFilter === 'usd' ? "bg-amber-600 text-white" : "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                  salesFilter === 'usd' ? "bg-rose-600 text-white" : "bg-rose-50 text-rose-700 hover:bg-rose-100"
                                 )}
                               >
                                 💵 USD
@@ -3968,7 +3588,7 @@ export default function POS() {
                                     <div className="flex items-start justify-between gap-2">
                                       <div>
                                         <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span className="font-mono text-[10px] font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                                          <span className="font-mono text-[10px] font-black text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100">
                                             {tx.id}
                                           </span>
                                           <span className="text-[9px] font-bold text-slate-400">
@@ -3987,14 +3607,14 @@ export default function POS() {
                                         <div className="flex items-center gap-1">
                                           <button
                                             onClick={() => setShowReceiptModal(tx)}
-                                            className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors cursor-pointer"
+                                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
                                             title="Ver Comprobante Flotante"
                                           >
                                             <Receipt className="w-3.5 h-3.5" />
                                           </button>
                                           <button
                                             onClick={() => handleThermalPrint(tx)}
-                                            className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors cursor-pointer"
+                                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
                                             title="Imprimir Ticket Térmico"
                                           >
                                             <Printer className="w-3.5 h-3.5" />
@@ -4034,7 +3654,7 @@ export default function POS() {
                                     <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-slate-100 text-[8px] font-black">
                                       <div className="flex items-center gap-1 flex-wrap">
                                         {cat === 'usd' && (
-                                          <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                          <span className="bg-rose-100 text-amber-800 px-2 py-0.5 rounded-full flex items-center gap-1">
                                             💵 100% Pagado en USD
                                           </span>
                                         )}
@@ -4091,7 +3711,7 @@ export default function POS() {
                                 <div key={idx} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm space-y-1.5">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                      <span className="w-7 h-7 bg-indigo-100 text-indigo-700 rounded-lg flex items-center justify-center font-black text-xs shrink-0">
+                                      <span className="w-7 h-7 bg-rose-100 text-rose-700 rounded-lg flex items-center justify-center font-black text-xs shrink-0">
                                         {prod.quantity}x
                                       </span>
                                       <div className="min-w-0">
@@ -4101,7 +3721,7 @@ export default function POS() {
                                         </span>
                                       </div>
                                     </div>
-                                    <span className="font-black text-indigo-600 text-xs shrink-0 ml-2">
+                                    <span className="font-black text-rose-600 text-xs shrink-0 ml-2">
                                       {formatMoney(prod.total, baseCurrency.symbol)}
                                     </span>
                                   </div>
@@ -4110,7 +3730,7 @@ export default function POS() {
                                   <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-100 text-[8px] font-bold">
                                     <span className="text-slate-400 uppercase tracking-widest text-[7px] font-black">Pagado en:</span>
                                     {prod.usdQty > 0 && (
-                                      <span className="bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded">
+                                      <span className="bg-rose-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded">
                                         💵 USD: {prod.usdQty} u. ({formatMoney(prod.usdTotal, baseCurrency.symbol)})
                                       </span>
                                     )}
@@ -4148,7 +3768,7 @@ export default function POS() {
                           <button
                             type="button"
                             onClick={() => handlePrintClosureThermal(currentSession)}
-                            className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 active:scale-95 flex items-center justify-center gap-2"
+                            className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-rose-700 transition-all shadow-md shadow-rose-100 active:scale-95 flex items-center justify-center gap-2"
                           >
                             <Printer className="w-4 h-4" />
                             Imprimir Resumen de Cierre
@@ -4161,10 +3781,10 @@ export default function POS() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <div className="bg-indigo-50 rounded-2xl p-4 flex justify-between items-center border border-indigo-100">
+                  <div className="bg-rose-50 rounded-2xl p-4 flex justify-between items-center border border-rose-100">
                     <div>
-                      <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Fondo Inicial</p>
-                      <p className="text-lg font-black text-indigo-900">{(currentSession?.openingBalance || 0).toLocaleString('es-CU', { minimumFractionDigits: 2 })} {baseCurrency.code}</p>
+                      <p className="text-[9px] font-black text-rose-400 uppercase tracking-widest">Fondo Inicial</p>
+                      <p className="text-lg font-black text-rose-900">{(currentSession?.openingBalance || 0).toLocaleString('es-CU', { minimumFractionDigits: 2 })} {baseCurrency.code}</p>
                     </div>
                     <button 
                       onClick={() => {
@@ -4174,7 +3794,7 @@ export default function POS() {
                         });
                         setClosingBalances(autoBalances);
                       }}
-                      className="text-[9px] font-black uppercase text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-xl transition-all shadow-md shadow-indigo-100 active:scale-95"
+                      className="text-[9px] font-black uppercase text-white bg-rose-600 hover:bg-rose-700 px-3 py-1.5 rounded-xl transition-all shadow-md shadow-rose-100 active:scale-95"
                     >
                       Cuadre Perfecto
                     </button>
@@ -4192,17 +3812,17 @@ export default function POS() {
                           required
                           value={sessionClosingDate}
                           onChange={(e) => setSessionClosingDate(e.target.value)}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-rose-500 shadow-sm"
                         />
                       </div>
 
                       {/* Vendedor del Turno (Sin volver a pedir el nombre) */}
-                      <div className="bg-indigo-50/60 p-3 rounded-xl border border-indigo-100 flex items-center justify-between">
+                      <div className="bg-rose-50/60 p-3 rounded-xl border border-rose-100 flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-indigo-600" />
-                          <span className="text-[9px] font-black text-indigo-900 uppercase tracking-wider">Vendedor Asignado:</span>
+                          <User className="w-4 h-4 text-rose-600" />
+                          <span className="text-[9px] font-black text-rose-900 uppercase tracking-wider">Vendedor Asignado:</span>
                         </div>
-                        <span className="text-xs font-black text-indigo-950 uppercase tracking-tight">
+                        <span className="text-xs font-black text-rose-950 uppercase tracking-tight">
                           {currentSession?.workerName || sessionWorkerName || currentUser?.name || 'Vendedor'}
                         </span>
                       </div>
@@ -4210,7 +3830,7 @@ export default function POS() {
                       {/* Salary Calculation Card */}
                       {(() => {
                         const sessionUser = users.find(u => u.id === currentSession?.userId || (u.name && currentSession?.workerName && u.name.toLowerCase() === currentSession.workerName.toLowerCase())) || currentUser;
-                        if (!sessionUser || sessionUser.isIndependent) return null;
+                        if (!sessionUser) return null;
                         
                         const sessionTx = activeTransactions.filter(t => 
                           t.sessionId === currentSession?.id && !t.deletedAt
@@ -4233,7 +3853,7 @@ export default function POS() {
                         const totalSalary = (sessionUser.baseSalary || 0) + totalCommissions;
                         
                         return (
-                          <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 space-y-2 shadow-sm animate-in fade-in slide-in-from-top-2">
+                          <div className="bg-rose-50 p-4 rounded-2xl border border-amber-200 space-y-2 shadow-sm animate-in fade-in slide-in-from-top-2">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <DollarSign className="w-4 h-4 text-amber-600" />
@@ -4265,17 +3885,17 @@ export default function POS() {
                             <div className="pt-3 border-t border-amber-100 space-y-2">
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-[9px] font-black text-amber-900 uppercase tracking-widest">Productos cobrados y salario por producto</span>
-                                <span className="text-[8px] font-black text-amber-700 uppercase whitespace-nowrap">{turnProductSalaryRows.reduce((sum, row) => sum + row.quantity, 0)} uds</span>
+                                <span className="text-[8px] font-black text-rose-700 uppercase whitespace-nowrap">{turnProductSalaryRows.reduce((sum, row) => sum + row.quantity, 0)} uds</span>
                               </div>
                               {turnProductSalaryRows.length > 0 ? (
                                 <div className="overflow-x-auto rounded-xl border border-amber-100 bg-white">
                                   <table className="w-full min-w-[560px] text-left">
-                                    <thead><tr className="bg-amber-50 border-b border-amber-100">
-                                      <th className="px-3 py-2 text-[7px] font-black text-amber-700 uppercase">Empleado</th>
-                                      <th className="px-3 py-2 text-[7px] font-black text-amber-700 uppercase">Producto</th>
-                                      <th className="px-3 py-2 text-[7px] font-black text-amber-700 uppercase text-right">Cantidad</th>
-                                      <th className="px-3 py-2 text-[7px] font-black text-amber-700 uppercase text-right">Salario / unidad</th>
-                                      <th className="px-3 py-2 text-[7px] font-black text-amber-700 uppercase text-right">Salario total</th>
+                                    <thead><tr className="bg-rose-50 border-b border-amber-100">
+                                      <th className="px-3 py-2 text-[7px] font-black text-rose-700 uppercase">Empleado</th>
+                                      <th className="px-3 py-2 text-[7px] font-black text-rose-700 uppercase">Producto</th>
+                                      <th className="px-3 py-2 text-[7px] font-black text-rose-700 uppercase text-right">Cantidad</th>
+                                      <th className="px-3 py-2 text-[7px] font-black text-rose-700 uppercase text-right">Salario / unidad</th>
+                                      <th className="px-3 py-2 text-[7px] font-black text-rose-700 uppercase text-right">Salario total</th>
                                     </tr></thead>
                                     <tbody className="divide-y divide-amber-50">
                                       {turnProductSalaryRows.map(row => (
@@ -4283,8 +3903,8 @@ export default function POS() {
                                           <td className="px-3 py-2 text-[8px] font-black text-slate-700 uppercase break-words">{row.employeeName}</td>
                                           <td className="px-3 py-2 text-[8px] font-black text-slate-900 uppercase break-words">{row.productName}</td>
                                           <td className="px-3 py-2 text-[8px] font-black text-slate-800 text-right">{row.quantity}</td>
-                                          <td className="px-3 py-2 text-[8px] font-black text-indigo-700 text-right">{formatSalaryCUP(row.salaryPerUnit)}</td>
-                                          <td className="px-3 py-2 text-[8px] font-black text-indigo-900 text-right">{formatSalaryCUP(row.salaryTotal)}</td>
+                                          <td className="px-3 py-2 text-[8px] font-black text-rose-700 text-right">{formatSalaryCUP(row.salaryPerUnit)}</td>
+                                          <td className="px-3 py-2 text-[8px] font-black text-rose-900 text-right">{formatSalaryCUP(row.salaryTotal)}</td>
                                         </tr>
                                       ))}
                                     </tbody>
@@ -4455,9 +4075,9 @@ export default function POS() {
                         placeholder="Ej: SN-123456789" 
                         value={configData.serialNumber || ''}
                         onChange={(e) => setConfigData({...configData, serialNumber: e.target.value})}
-                        className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow"
+                        className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none transition-shadow"
                       />
-                      <button type="button" onClick={generateSerial} className="px-4 py-2.5 bg-indigo-50 text-indigo-700 rounded-xl font-medium hover:bg-indigo-100 transition-colors">
+                      <button type="button" onClick={generateSerial} className="px-4 py-2.5 bg-rose-50 text-rose-700 rounded-xl font-medium hover:bg-rose-100 transition-colors">
                         Generar
                       </button>
                     </div>
@@ -4471,7 +4091,7 @@ export default function POS() {
                       required
                       value={configData.selectedSize || ''}
                       onChange={(e) => setConfigData({...configData, selectedSize: e.target.value})}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none transition-shadow"
                     >
                       {selectedProduct.availableSizes.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
@@ -4485,7 +4105,7 @@ export default function POS() {
                       required
                       value={configData.selectedColor || ''}
                       onChange={(e) => setConfigData({...configData, selectedColor: e.target.value})}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none transition-shadow"
                     >
                       {selectedProduct.availableColors.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
@@ -4502,7 +4122,7 @@ export default function POS() {
                   </button>
                   <button 
                     type="submit" 
-                    className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                    className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-medium hover:bg-rose-700 transition-colors disabled:opacity-50"
                   >
                     Agregar
                   </button>
@@ -4528,7 +4148,7 @@ export default function POS() {
             <span className="truncate max-w-[160px] text-slate-300 flex items-center gap-1.5">
               {branches.find(b => b.id === currentBranchId)?.name || branches[0]?.name || 'Sucursal General'}
               {isBranchLocked && (
-                <span className="flex items-center gap-0.5 bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded text-[8px] border border-amber-500/30">
+                <span className="flex items-center gap-0.5 bg-rose-500/20 text-amber-300 px-1.5 py-0.5 rounded text-[8px] border border-rose-500/30">
                   <Lock className="w-2.5 h-2.5" /> Bloqueado
                 </span>
               )}
@@ -4536,9 +4156,9 @@ export default function POS() {
           </div>
 
           {/* Exchange Rates Ticker */}
-          <div className="hidden md:flex items-center gap-2 bg-indigo-950/60 border border-indigo-500/20 px-2.5 py-1 rounded-lg">
+          <div className="hidden md:flex items-center gap-2 bg-rose-950/60 border border-rose-500/20 px-2.5 py-1 rounded-lg">
             {currencies.filter(c => !c.isBase).slice(0, 2).map(c => (
-              <span key={c.code} className="text-[9px] font-black text-indigo-300">
+              <span key={c.code} className="text-[9px] font-black text-rose-300">
                 1 {c.code} = {c.rateToBase.toLocaleString('es-CU')} {baseCurrency.code}
               </span>
             ))}
@@ -4605,7 +4225,7 @@ export default function POS() {
           {/* Sidebar Header */}
           <div className="h-12 border-b border-base flex items-center justify-between px-3.5 shrink-0 bg-subtle">
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 bg-indigo-600 rounded-lg flex items-center justify-center text-white shadow-xs">
+              <div className="w-6 h-6 bg-rose-600 rounded-lg flex items-center justify-center text-white shadow-xs">
                 <Receipt className="w-3.5 h-3.5" />
               </div>
               <div>
@@ -4630,13 +4250,13 @@ export default function POS() {
               <select 
                 value={currentCustomerId || ""}
                 onChange={(e) => setCartCustomer(e.target.value || undefined)}
-                className="w-full pl-7 pr-3 py-1.5 bg-subtle border border-base rounded-lg outline-none text-[9px] font-bold uppercase tracking-tight text-primary focus:ring-1 focus:ring-indigo-500 transition-all appearance-none"
+                className="w-full pl-7 pr-3 py-1.5 bg-subtle border border-base rounded-lg outline-none text-[9px] font-bold uppercase tracking-tight text-primary focus:ring-1 focus:ring-rose-500 transition-all appearance-none"
               >
                 <option value="">Consumidor Final</option>
                 {customers.map(c => (<option key={c.id} value={c.id}>{c?.name || "Cliente"}</option>))}
               </select>
             </div>
-            <button onClick={() => setShowAddCustomerModal(true)} className="p-1.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-100 dark:border-indigo-900 hover:bg-indigo-100 transition-all" title="Registrar Cliente">
+            <button onClick={() => setShowAddCustomerModal(true)} className="p-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg border border-rose-100 dark:border-rose-900 hover:bg-rose-100 transition-all" title="Registrar Cliente">
               <UserPlus className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -4718,7 +4338,7 @@ export default function POS() {
                               } else updateCartQty(item.id, 1);
                             }} 
                             disabled={prodHasSerial}
-                            className="p-0.5 sm:p-1 rounded hover:bg-subtle text-secondary hover:text-indigo-600 transition-all disabled:opacity-20 active:scale-90 cursor-pointer"
+                            className="p-0.5 sm:p-1 rounded hover:bg-subtle text-secondary hover:text-rose-600 transition-all disabled:opacity-20 active:scale-90 cursor-pointer"
                             title="Aumentar"
                           >
                             <Plus className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
@@ -4726,7 +4346,7 @@ export default function POS() {
                         </div>
                         <div className="flex gap-1 flex-wrap justify-end">
                           {item.variantLabel && <span className="px-1 py-0.2 bg-subtle text-secondary text-[7px] font-black rounded uppercase border border-base">{item.variantLabel}</span>}
-                          {item.serialNumber && <span className="px-1 py-0.2 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-[7px] font-black rounded border border-indigo-100 dark:border-indigo-900">SN: {item.serialNumber}</span>}
+                          {item.serialNumber && <span className="px-1 py-0.2 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-[7px] font-black rounded border border-rose-100 dark:border-rose-900">SN: {item.serialNumber}</span>}
                         </div>
                       </div>
                     </div>
@@ -4745,7 +4365,7 @@ export default function POS() {
               </div>
               <div className="flex justify-between items-center pt-1 border-t border-base">
                 <span className="text-[11px] font-black text-primary uppercase tracking-wider">Total</span>
-                <span className="text-xl font-black text-indigo-600 dark:text-indigo-400 tracking-tight">{formatMoney(totalBase, baseCurrency.symbol)}</span>
+                <span className="text-xl font-black text-rose-600 dark:text-rose-400 tracking-tight">{formatMoney(totalBase, baseCurrency.symbol)}</span>
               </div>
             </div>
 
@@ -4763,7 +4383,7 @@ export default function POS() {
                   setActivePaymentLineId(lineId);
                   setShowCheckoutModal(true);
                 }}
-                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[11px] uppercase tracking-wider transition-all shadow-md shadow-indigo-600/20 disabled:opacity-20 active:scale-98 flex items-center justify-center gap-2"
+                className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-[11px] uppercase tracking-wider transition-all shadow-md shadow-rose-600/20 disabled:opacity-20 active:scale-98 flex items-center justify-center gap-2"
               >
                 <Banknote className="w-4 h-4 text-emerald-300" />
                 Cobrar Efectivo
@@ -4791,7 +4411,7 @@ export default function POS() {
                 <button 
                   disabled={cart.length === 0}
                   onClick={() => openCheckout()}
-                  className="py-2 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl font-black text-[9px] uppercase tracking-wider transition-all shadow-xs disabled:opacity-20 active:scale-98 flex items-center justify-center gap-1.5"
+                  className="py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl font-black text-[9px] uppercase tracking-wider transition-all shadow-xs disabled:opacity-20 active:scale-98 flex items-center justify-center gap-1.5"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Cobro Mixto
@@ -4855,7 +4475,7 @@ export default function POS() {
                 <ShieldCheck className="w-5 h-5" />
               </div>
               <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                <span className="bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-indigo-100 dark:border-indigo-900">
+                <span className="bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-rose-100 dark:border-rose-900">
                   {lastClosedSession.id}
                 </span>
                 <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
@@ -4879,9 +4499,7 @@ export default function POS() {
                 );
 
                 const employee = users.find(u => u.id === lastClosedSession.userId || u.name === lastClosedSession.workerName) || users.find(u => u.name?.toLowerCase() === lastClosedSession.workerName?.toLowerCase()) || users.find(u => u.role === 'employee') || currentUser;
-                const isIndependent = employee?.isIndependent === true;
 
-                const commissions = isIndependent ? 0 : sessionTransactions.reduce((sum, tx) => {
                   return sum + (tx.items || []).reduce((s, item) => {
                     const prodId = typeof item.product === 'string' ? item.product : item.product?.id;
                     const prod = products.find(p => p.id === prodId);
@@ -4891,7 +4509,7 @@ export default function POS() {
                   }, 0);
                 }, 0);
 
-                const baseSalary = isIndependent ? 0 : (employee?.baseSalary || 0);
+                const baseSalary = employee?.baseSalary || 0;
                 const settlement = salarySettlements.find(s => s.sessionId === lastClosedSession.id);
                 const deduction = settlement?.discrepancyDeduction || 0;
                 const totalSalary = (baseSalary + commissions) - deduction;
@@ -4914,7 +4532,7 @@ export default function POS() {
                     <div className="bg-slate-50 dark:bg-slate-800/40 rounded-xl sm:rounded-2xl p-3 border border-slate-100 dark:border-slate-800">
                       <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 flex justify-between">
                         <span>Resumen de Venta</span>
-                        <span className="text-indigo-600 dark:text-indigo-400">{totalItems} {totalItems === 1 ? 'unidad' : 'unidades'}</span>
+                        <span className="text-rose-600 dark:text-rose-400">{totalItems} {totalItems === 1 ? 'unidad' : 'unidades'}</span>
                       </p>
                       <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
                         {Object.entries(groupedProducts).map(([name, qty]) => (
@@ -4930,8 +4548,8 @@ export default function POS() {
                     </div>
 
                     {/* Liquidación de Salario */}
-                    <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl p-3 border border-indigo-100 dark:border-indigo-900/50 space-y-2 shadow-2xs">
-                      <div className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest border-b border-indigo-50 dark:border-indigo-950 pb-1.5 flex justify-between">
+                    <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl p-3 border border-rose-100 dark:border-rose-900/50 space-y-2 shadow-2xs">
+                      <div className="text-[9px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest border-b border-rose-50 dark:border-rose-950 pb-1.5 flex justify-between">
                         <span>Liquidación de Salario</span>
                         <span className="text-slate-400 font-bold">{lastClosedSession.workerName}</span>
                       </div>
@@ -4959,7 +4577,7 @@ export default function POS() {
                           <span className="text-[9px] font-black text-slate-900 dark:text-white uppercase tracking-wider block">Neto a Recibir</span>
                           <span className="text-[7px] font-bold text-slate-400 uppercase">Liquidación Total Turno</span>
                         </div>
-                        <span className="text-lg sm:text-xl font-black text-indigo-600 dark:text-indigo-400 font-mono tracking-tight">
+                        <span className="text-lg sm:text-xl font-black text-rose-600 dark:text-rose-400 font-mono tracking-tight">
                           {formatSalaryCUP(totalSalary)}
                         </span>
                       </div>
@@ -5027,7 +4645,7 @@ export default function POS() {
                     type="text" 
                     value={newCustomer.name} 
                     onChange={e => setNewCustomer({...newCustomer, name: e.target.value})}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-100 outline-none text-xs font-bold" 
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-rose-100 outline-none text-xs font-bold" 
                   />
                 </div>
                 <div>
@@ -5036,7 +4654,7 @@ export default function POS() {
                     type="text" 
                     value={newCustomer.phone} 
                     onChange={e => setNewCustomer({...newCustomer, phone: e.target.value})}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-100 outline-none text-xs font-bold" 
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-rose-100 outline-none text-xs font-bold" 
                   />
                 </div>
                 <div>
@@ -5045,7 +4663,7 @@ export default function POS() {
                     type="email" 
                     value={newCustomer.email} 
                     onChange={e => setNewCustomer({...newCustomer, email: e.target.value})}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-100 outline-none text-xs font-bold" 
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-rose-100 outline-none text-xs font-bold" 
                   />
                 </div>
                 <div>
@@ -5054,11 +4672,11 @@ export default function POS() {
                     type="text" 
                     value={newCustomer.taxId} 
                     onChange={e => setNewCustomer({...newCustomer, taxId: e.target.value})}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-indigo-100 outline-none text-xs font-bold" 
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl focus:ring-1 focus:ring-rose-100 outline-none text-xs font-bold" 
                     placeholder="Número de identidad"
                   />
                 </div>
-                <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 active:scale-95">
+                <button type="submit" className="w-full py-3 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-700 transition-all shadow-xl shadow-rose-100 active:scale-95">
                   Guardar Cliente
                 </button>
               </form>
@@ -5077,7 +4695,7 @@ export default function POS() {
             title="Expandir barra de ticket"
           >
             <div className="relative shrink-0">
-              <ShoppingCart className="w-4 h-4 text-indigo-400" />
+              <ShoppingCart className="w-4 h-4 text-rose-400" />
               {cart.length > 0 && (
                 <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[8px] font-black w-3.5 h-3.5 rounded-full flex items-center justify-center border border-slate-900">
                   {cart.reduce((s, i) => s + i.quantity, 0)}
@@ -5096,7 +4714,7 @@ export default function POS() {
               className="flex items-center gap-2 cursor-pointer flex-1 min-w-0"
             >
               <div className="relative shrink-0">
-                <div className="w-8 h-8 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-indigo-950">
+                <div className="w-8 h-8 bg-rose-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-rose-950">
                   <ShoppingCart className="w-3.5 h-3.5" />
                 </div>
                 {cart.length > 0 && (
@@ -5121,7 +4739,7 @@ export default function POS() {
                 onClick={() => setShowMobileCart(true)}
                 className="h-8 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 active:scale-95 border border-slate-700 shadow-sm"
               >
-                <Receipt className="w-3.5 h-3.5 text-indigo-400" />
+                <Receipt className="w-3.5 h-3.5 text-rose-400" />
                 <span>Ticket</span>
               </button>
               <button
