@@ -122,7 +122,7 @@ export default function POS() {
   
   
   const navigate = useNavigate();
-  const fallbackSessionBranchId = currentBranchId || (currentUser?.branchId || currentUser?.branchId || branches[0]?.id || '');
+  const fallbackSessionBranchId = currentBranchId || (currentUser?.branchId || branches[0]?.id || '');
   const currentSession = useMemo(() => {
     if (activeSessionId) {
       const active = cashSessions.find(s => s.id === activeSessionId && s.status === 'open' && !s.deletedAt);
@@ -1350,7 +1350,7 @@ export default function POS() {
     }, 0);
 
     const employee = users.find(u => u.id === session.userId || u.name === session.workerName) || users.find(u => u.name?.toLowerCase() === session.workerName?.toLowerCase()) || users.find(u => u.role === 'employee') || currentUser;
-    const isIndependent = employee?.isIndependent || false;
+    const isIndependent = false;
 
     // Calculate total cost for shop (what the independent seller owes the shop)
     const totalShopCost = sessionTx.reduce((sum, tx) => {
@@ -1362,11 +1362,11 @@ export default function POS() {
       }, 0);
     }, 0);
 
-    const baseSalary = isIndependent ? 0 : (employee?.baseSalary || 0);
-    const totalSalary = isIndependent ? 0 : (baseSalary + commissions);
+    const baseSalary = employee?.baseSalary || 0;
+    const totalSalary = baseSalary + commissions;
 
     const lines: string[] = [];
-    lines.push(`CENTER|BOLD|${receiptConfig.businessName || 'MARÉ POS'}`);
+    lines.push(`CENTER|BOLD|${receiptConfig.businessName || 'PALMYRA POS'}`);
     if (receiptConfig.showAddress && receiptConfig.businessAddress) lines.push(`CENTER|${receiptConfig.businessAddress}`);
     if (receiptConfig.showPhone && receiptConfig.businessPhone) lines.push(`CENTER|${receiptConfig.businessPhone}`);
     lines.push("---");
@@ -1374,7 +1374,7 @@ export default function POS() {
     lines.push(`TURNO: ${session.id}`);
     lines.push(`FECHA: ${new Date(session.closingDate || session.closedAt || new Date()).toLocaleDateString()}`);
     lines.push(`HORA: ${new Date(session.closingDate || session.closedAt || new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
-    lines.push(`EMPLEADO: ${(session.workerName || 'EMPLEADO').toUpperCase()}${isIndependent ? ' (IND)' : ''}`);
+    lines.push(`EMPLEADO: ${(session.workerName || 'EMPLEADO').toUpperCase()}`);
     lines.push(`SUCURSAL: ${(branches.find(b => b.id === session.branchId)?.name || 'Central').slice(0, 18)}`);
     lines.push("---");
     lines.push("BOLD|PRODUCTOS VENDIDOS:");
@@ -1395,7 +1395,7 @@ export default function POS() {
     lines.push(`ITEMS TOTALES: ${soldList.reduce((s, i) => s + i.qty, 0)}`);
     lines.push("---");
 
-    if (isIndependent) {
+    if (false) {
       lines.push("BOLD|LIQUIDACION INDEPENDIENTE:");
       const shopLabel = "Costo Fijo Tienda:";
       const shopVal = formatMoney(totalShopCost, baseCurrency.symbol);
@@ -1499,7 +1499,7 @@ export default function POS() {
     lines.push(`BOLD|${totSalLabel}${" ".repeat(Math.max(1, 32 - totSalLabel.length - totSalVal.length))}${totSalVal}`);
     lines.push("---");
     lines.push("CENTER|Firma: _________________");
-    lines.push("CENTER|MARÉ SISTEMA POS");
+    lines.push("CENTER|PALMYRA POS");
 
     return lines;
   };
@@ -1682,28 +1682,21 @@ export default function POS() {
     const currentTransactions = useStore.getState().transactions.filter(t => !t.deletedAt);
     const txCount = currentTransactions.length;
     const maxTicketNum = currentTransactions.reduce((max, t) => {
-      const match = t.id?.match(/TIKECT ID-MARE(\d+)/i);
+      const match = t.id?.match(/PALMYRA-TK(\d+)/i);
       return match ? Math.max(max, parseInt(match[1], 10)) : max;
     }, 0);
-    const activeSellerId = false
-      ? currentUser?.id || currentSession.userId || 'u1'
-      : currentSession.userId || currentUser?.id || 'u1';
-    const activeSellerName = false
-      ? currentUser?.name || currentSession.workerName || 'Empleado'
-      : currentSession.workerName || currentUser?.name || 'Empleado';
+    const activeSellerId = currentSession.userId || currentUser?.id || 'u1';
+    const activeSellerName = currentSession.workerName || currentUser?.name || 'Empleado';
     const sellerUser = (users || []).find(u => u.id === activeSellerId) || currentUser;
-    const assignedIdnBranch = false
-      ? (currentUser?.branchId || currentUser?.branchId ||
-        (currentUser?.allowedBranches?.length === 1 ? currentUser.allowedBranches[0] : null))
-      : null;
-    const effectiveBranchId = assignedIdnBranch || currentSession.branchId || sellerUser?.assignedBranchId || currentBranchId || (branches[0]?.id || 'b1');
+    const assignedBranch = null;
+    const effectiveBranchId = currentSession.branchId || sellerUser?.branchId || currentBranchId || (branches[0]?.id || '');
 
     // El número visible conserva legibilidad, pero el ID físico del ticket debe
     // ser globalmente único entre dispositivos. Nunca usamos solo el contador local:
     // dos terminales pueden tener el mismo estado y generar el mismo ticket.
     const nextTicketNum = Math.max(txCount, maxTicketNum) + 1;
     const ticketSerial = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
-    const txId = `TIKECT ID-MARE${nextTicketNum.toString().padStart(2, '0')}-${ticketSerial}`;
+    const txId = `PALMYRA-TK${nextTicketNum.toString().padStart(2, '0')}-${ticketSerial}`;
 
     const tx: import('../types').Transaction = {
       id: txId,
@@ -1830,12 +1823,7 @@ export default function POS() {
         return;
       }
 
-      const workerToAssign = false
-        ? users.find(u => u.id === currentUser?.id && u.isIndependent === true) || currentUser
-        : ((sessionWorkerId && users.find(u => u.id === sessionWorkerId)) ||
-          detectedWorker ||
-          users.find(u => (u.name || '').trim().toLowerCase() === trimmedWorkerName.toLowerCase()) ||
-          null);
+      const workerToAssign = ((${1}null);
 
       if (!workerToAssign || workerToAssign.isActive === false) {
         setPosError("No se encontró un empleado activo con ese nombre. Actualiza el directorio y vuelve a seleccionar.");
@@ -1987,7 +1975,7 @@ export default function POS() {
     }
 
     if (false) {
-      const assignedBranchId = currentUser?.branchId || currentUser?.branchId ||
+      const assignedBranchId = currentUser?.branchId ||
         (currentUser?.allowedBranches?.length === 1 ? currentUser.allowedBranches[0] : null);
       const ownIdentity = targetSession.userId === currentUser?.id ||
         targetSession.workingEmployeeIds?.includes(currentUser?.id || '');
@@ -1999,11 +1987,9 @@ export default function POS() {
     }
 
     const targetBranchIds = new Set(
-      targetUser.branchId
-        ? [targetUser.branchId]
-        : targetUser.branchId
-          ? [targetUser.branchId]
-          : (targetUser.allowedBranches || [])
+      targetUser.allowedBranches?.length
+        ? targetUser.allowedBranches
+        : (targetUser.branchId ? [targetUser.branchId] : [])
     );
 
     if (targetBranchIds.size > 0 && !targetBranchIds.has(targetSession.branchId) && currentUser?.role !== 'admin') {
@@ -2317,7 +2303,7 @@ export default function POS() {
                                     })
                                     .map(u => {
                                       const isSelected = sessionWorkerName === (u.name || '');
-                                      const false = u.isIndependent === true;
+                                      const isSelectedEmployee = false;
                                       const open = openSessionForWorker(u.id);
                                       return (
                                         <button
@@ -3288,7 +3274,7 @@ export default function POS() {
                       {/* Salary Calculation Card */}
                       {(() => {
                         const sessionUser = users.find(u => u.id === currentSession?.userId || (u.name && currentSession?.workerName && u.name.toLowerCase() === currentSession.workerName.toLowerCase())) || currentUser;
-                        if (!sessionUser || sessionUser.isIndependent) return null;
+                        if (!sessionUser) return null;
                         
                         const sessionTx = activeTransactions.filter(t => 
                           t.sessionId === currentSession?.id && !t.deletedAt
@@ -3957,7 +3943,7 @@ export default function POS() {
                 );
 
                 const employee = users.find(u => u.id === lastClosedSession.userId || u.name === lastClosedSession.workerName) || users.find(u => u.name?.toLowerCase() === lastClosedSession.workerName?.toLowerCase()) || users.find(u => u.role === 'employee') || currentUser;
-                const isIndependent = employee?.isIndependent === true;
+                const isIndependent = false;
 
                 const commissions = isIndependent ? 0 : sessionTransactions.reduce((sum, tx) => {
                   return sum + (tx.items || []).reduce((s, item) => {
@@ -3969,7 +3955,7 @@ export default function POS() {
                   }, 0);
                 }, 0);
 
-                const baseSalary = isIndependent ? 0 : (employee?.baseSalary || 0);
+                const baseSalary = employee?.baseSalary || 0;
                 const settlement = salarySettlements.find(s => s.sessionId === lastClosedSession.id);
                 const deduction = settlement?.discrepancyDeduction || 0;
                 const totalSalary = (baseSalary + commissions) - deduction;
@@ -4261,7 +4247,7 @@ export default function POS() {
 
             return (
               <div className="space-y-1">
-                <div className="text-center font-black text-sm uppercase">{receiptConfig?.businessName || 'MARÉ POS'}</div>
+                <div className="text-center font-black text-sm uppercase">{receiptConfig?.businessName || 'PALMYRA POS'}</div>
                 {receiptConfig?.showAddress && receiptConfig?.businessAddress && (
                   <div className="text-center text-[9px]">{receiptConfig.businessAddress}</div>
                 )}
