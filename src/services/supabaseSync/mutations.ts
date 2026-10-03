@@ -265,7 +265,6 @@ export async function pushTransactionToSupabase(tx: Transaction): Promise<boolea
     const res = await safeUpsert(supabase, 'transactions', row);
     if (res?.error) throw res.error;
 
-    // Verificación física del registro. Para liquidaciones IDN esto evita el
     // antiguo "fire-and-forget": el cierre no avanza hasta saber que la fila existe.
     const { data: persisted, error: verifyError } = await supabase
       .from('transactions')
