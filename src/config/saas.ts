@@ -23,8 +23,8 @@ export const PALMYRA_PLANS: SaaSPlan[] = [
     products: 50,
     reports: 'Reportes básicos',
     support: 'Soporte estándar',
-    description: 'Para pequeños negocios que quieren vender, controlar inventario y entender sus números.',
-    features: ['1 almacén', '2 empleados + administrador', '50 tipos de productos', 'Reportes básicos', 'POS e inventario', 'Modo offline']
+    description: 'Para pequeños negocios que quieren empezar con control de ventas, inventario y caja.',
+    features: ['1 almacén', '2 empleados + administrador', '50 tipos de productos/SKUs', 'Reportes básicos', 'POS e inventario', 'Modo offline']
   },
   {
     code: 'growth',
@@ -33,10 +33,10 @@ export const PALMYRA_PLANS: SaaSPlan[] = [
     warehouses: 3,
     employees: 4,
     products: 150,
-    reports: 'Reportes avanzados',
+    reports: 'Reportes más avanzados',
     support: 'Soporte estándar',
-    description: 'Para negocios en crecimiento con varias ubicaciones y mayor control operativo.',
-    features: ['3 almacenes', '4 empleados + administrador', '150 tipos de productos', 'Reportes avanzados', 'Transferencias entre almacenes', 'Compras y proveedores']
+    description: 'Para negocios que necesitan varias ubicaciones, compras y mayor visibilidad operativa.',
+    features: ['3 almacenes', '4 empleados + administrador', '150 tipos de productos/SKUs', 'Reportes avanzados', 'Transferencias entre almacenes', 'Compras y proveedores']
   },
   {
     code: 'pro',
@@ -45,10 +45,10 @@ export const PALMYRA_PLANS: SaaSPlan[] = [
     warehouses: 7,
     employees: 10,
     products: 300,
-    reports: 'Reportes avanzados+',
+    reports: 'Reportes mucho más avanzados',
     support: 'Soporte prioritario',
-    description: 'Para equipos que necesitan escala, analítica más profunda y atención prioritaria.',
-    features: ['7 almacenes', '10 empleados + administrador', '300 tipos de productos', 'Reportes avanzados+', 'Analítica avanzada', 'Soporte prioritario']
+    description: 'Para empresas con más almacenes, equipos grandes, analítica profunda y atención prioritaria.',
+    features: ['7 almacenes', '10 empleados + administrador', '300 tipos de productos/SKUs', 'Reportes avanzados+', 'Analítica avanzada', 'Soporte prioritario']
   }
 ];
 
