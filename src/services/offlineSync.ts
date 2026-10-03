@@ -7,7 +7,7 @@
 import { getSupabase, checkSupabaseReachability } from '../lib/supabase';
 import { useStore } from '../store/useStore';
 import type { OfflineActionType, OfflineQueueItem } from './offlineQueue';
-import type { Transaction, CashRegisterSession, Customer, ReturnItem, Branch, Product, Category } from '../types';
+import type { Transaction, CashRegisterSession, Customer, ReturnItem, Branch, Product, Category, BankCard, Supplier, SupplierOrder, InventoryAudit, InventoryLevel, Warranty, TimeShift, Quote, SalarySettlement } from '../types';
 import {
   getOfflineQueue,
   waitForOfflineQueueReady,
@@ -42,167 +42,27 @@ async function reconcileBankCanonical(): Promise<void> {
   }
 }
 
-async function reconcileSupplierReceiveCanonical(supabase: any, orderId: string): Promise<void> {
-  try {
-    const { data: remoteOrder, error } = await supabase
-      .from('supplier_orders')
-      .select('*')
-      .eq('id', orderId)
-      .maybeSingle();
-    if (error) throw error;
-
-    if (remoteOrder) {
-      useStore.setState(state => ({
-        supplierOrders: (state.supplierOrders || []).map(order =>
-          order.id === orderId
-            ? { ...order, status: remoteOrder.status || order.status }
-            : order
-        )
+async function reconcileSupplierReceiveCanonical(supabase:any,orderId:string):Promise<void>{
+  try{
+    const {data:order,error}=await supabase.from('purchase_orders').select('id,status,warehouse_id,company_id').eq('id',orderId).maybeSingle();
+    if(error)throw error;
+    if(order)useStore.setState(state=>({supplierOrders:(state.supplierOrders||[]).map(x=>x.id===orderId?{...x,status:order.status||x.status}:x)}));
+    if(order?.warehouse_id){
+      const inv=await pullBranchInventoryFromSupabase(order.warehouse_id);
+      if(!inv.success)throw new Error(inv.message||'No se pudo reconciliar el inventario de la recepción.');
+      useStore.setState(state=>({
+        inventory:[...(state.inventory||[]).filter(x=>x.branchId!==order.warehouse_id),...inv.inventory]
       }));
     }
-
-    // El inventario local puede haber sido incrementado de forma optimista
-    // mientras estaba offline; refrescamos la sucursal para devolverlo al
-    // estado que realmente existe en Supabase.
-    const branchId = remoteOrder?.branch_id;
-    if (branchId) {
-      const inventoryRes = await pullBranchInventoryFromSupabase(branchId);
-      if (!inventoryRes.success) {
-        throw new Error(inventoryRes.message || 'No se pudo reconciliar el inventario de la recepción.');
-      }
-      const pendingRows = getOfflineQueue().filter(q => {
-        const d = q.data || {};
-        return (
-          (q.type === 'transfer' && (d.fromBranchId === branchId || d.toBranchId === branchId)) ||
-          (q.type === 'transfer_bulk' && (d.fromBranchId === branchId || d.toBranchId === branchId)) ||
-          (q.type === 'transaction' && d.branchId === branchId) ||
-          ((q.type === 'inventory_adjustment' || q.type === 'inventory_reconcile') && d.branchId === branchId)
-        );
-      });
-      const pendingKeys = new Set<string>();
-      for (const q of pendingRows) {
-        const d = q.data || {};
-        if (q.type === 'transaction') {
-          for (const line of Array.isArray(d.items) ? d.items : []) {
-            const productId = typeof line?.product === 'string' ? line.product : line?.product?.id;
-            if (productId) pendingKeys.add(`${productId}:${branchId}:${line?.variantLabel || line?.variant_label || ''}`);
-          }
-        } else if (q.type === 'transfer') {
-          for (const line of Array.isArray(d.variants) ? d.variants : []) {
-            if (d.productId) pendingKeys.add(`${d.productId}:${branchId}:${line?.variantLabel || line?.variant_label || ''}`);
-          }
-        } else if (q.type === 'transfer_bulk') {
-          for (const op of Array.isArray(d.items) ? d.items : []) {
-            for (const line of Array.isArray(op?.variants) ? op.variants : []) {
-              if (op?.productId) pendingKeys.add(`${op.productId}:${branchId}:${line?.variantLabel || line?.variant_label || ''}`);
-            }
-          }
-        } else if (d.productId) {
-          pendingKeys.add(`${d.productId}:${branchId}:${d.variantLabel || ''}`);
-        }
-      }
-      useStore.setState(state => {
-        const otherBranches = (state.inventory || []).filter(item => item.branchId !== branchId);
-        const byKey = new Map(inventoryRes.inventory.map(item => [
-          `${item.productId}:${item.branchId}:${item.variantLabel || ''}`, item
-        ]));
-        for (const localRow of state.inventory || []) {
-          const key = `${localRow.productId}:${localRow.branchId}:${localRow.variantLabel || ''}`;
-          if (pendingKeys.has(key)) byKey.set(key, localRow);
-        }
-        return { inventory: [...otherBranches, ...Array.from(byKey.values())] };
-      });
-    }
-  } catch (e) {
-    console.warn('[supplier_receive] No se pudo reconciliar la orden/stock canónico:', e);
-  }
+  }catch(e){console.warn('[supplier_receive] No se pudo reconciliar la compra/stock canónico:',e);}
 }
 
-async function refreshTransferBranchesCanonical(
-  supabase: any,
-  branchIds: string[]
-): Promise<void> {
-  const ids = Array.from(new Set(branchIds.filter(Boolean)));
-  if (!ids.length) return;
-  const { data, error } = await supabase
-    .from('inventory')
-    .select('*')
-    .in('branch_id', ids);
-  if (error) throw error;
-
-  const freshByKey = new Map<string, any>();
-  for (const row of data || []) {
-    freshByKey.set(
-      `${row.product_id}:${row.branch_id}:${row.variant_label || ''}`,
-      {
-        id: row.id,
-        productId: row.product_id,
-        branchId: row.branch_id,
-        variantLabel: row.variant_label || undefined,
-        quantity: Number(row.quantity) || 0,
-        minQuantity: Number(row.min_quantity) || 0
-      }
-    );
+async function refreshTransferBranchesCanonical(supabase:any,branchIds:string[]):Promise<void>{
+  for(const branchId of Array.from(new Set(branchIds.filter(Boolean)))){
+    const inv=await pullBranchInventoryFromSupabase(branchId);
+    if(!inv.success)throw new Error(inv.message||'No se pudo actualizar el stock del almacén.');
+    useStore.setState(state=>({inventory:[...(state.inventory||[]).filter(x=>x.branchId!==branchId),...inv.inventory]}));
   }
-
-  // No perder el espejo optimista de otras operaciones que siguen en
-  // la cola para estas mismas sucursales. El movimiento que acabamos de
-  // confirmar ya no estará en la cola; solo conservamos operaciones aún
-  // pendientes.
-  const pendingKeys = new Set<string>();
-  for (const queued of getOfflineQueue()) {
-    const d = queued.data || {};
-    if (queued.type === 'transaction') {
-      const branchId = d.branchId;
-      for (const saleItem of Array.isArray(d.items) ? d.items : []) {
-        const productId = typeof saleItem?.product === 'string' ? saleItem.product : saleItem?.product?.id;
-        if (!productId || !ids.includes(branchId)) continue;
-        pendingKeys.add(`${productId}:${branchId}:${saleItem?.variantLabel || saleItem?.variant_label || ''}`);
-      }
-    } else if (queued.type === 'transfer') {
-      const productId = d.productId;
-      for (const v of Array.isArray(d.variants) ? d.variants : []) {
-        const label = v?.variantLabel ?? v?.variant_label ?? '';
-        if (!productId) continue;
-        if (ids.includes(d.fromBranchId)) pendingKeys.add(`${productId}:${d.fromBranchId}:${label}`);
-        if (ids.includes(d.toBranchId)) pendingKeys.add(`${productId}:${d.toBranchId}:${label}`);
-      }
-    } else if (queued.type === 'transfer_bulk') {
-      for (const op of Array.isArray(d.items) ? d.items : []) {
-        for (const v of Array.isArray(op?.variants) ? op.variants : []) {
-          const label = v?.variantLabel ?? v?.variant_label ?? '';
-          if (!op?.productId) continue;
-          if (ids.includes(d.fromBranchId)) pendingKeys.add(`${op.productId}:${d.fromBranchId}:${label}`);
-          if (ids.includes(d.toBranchId)) pendingKeys.add(`${op.productId}:${d.toBranchId}:${label}`);
-        }
-      }
-    } else if (queued.type === 'supplier_receive') {
-      const order = (useStore.getState().supplierOrders || []).find(o => o.id === d.id);
-      if (order && ids.includes(order.branchId)) {
-        for (const line of Array.isArray(order.items) ? order.items : []) {
-          pendingKeys.add(`${line.productId}:${order.branchId}:${line.variantLabel || ''}`);
-        }
-      }
-    } else if (queued.type === 'inventory_adjustment' || queued.type === 'inventory_reconcile') {
-      if (ids.includes(d.branchId) && d.productId) {
-        pendingKeys.add(`${d.productId}:${d.branchId}:${d.variantLabel || ''}`);
-      }
-    }
-  }
-
-  useStore.setState(state => {
-    const existing = (state.inventory || []).filter(row => !ids.includes(row.branchId));
-    const freshByKeyWithPendingOverlay = new Map(freshByKey);
-    for (const localRow of state.inventory || []) {
-      const key = `${localRow.productId}:${localRow.branchId}:${localRow.variantLabel || ''}`;
-      if (pendingKeys.has(key)) {
-        freshByKeyWithPendingOverlay.set(key, localRow);
-      }
-    }
-    return {
-      inventory: [...existing, ...Array.from(freshByKeyWithPendingOverlay.values())]
-    };
-  });
 }
 
 let isProcessingQueue = false;
