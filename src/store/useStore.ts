@@ -14,6 +14,7 @@ import {
   deleteBankTransactionFromSupabase, clearSelectedDataFromSupabase, callOpenSessionRPCWithId, callProcessTransactionRPC, callVoidTransactionRPC, callCompleteReturnRPC, callTransferInventoryRPC, callReceiveSupplierOrderRPC, callCompleteInventoryAuditRPC, callCloseSessionRPC, callCancelSessionRPC, callDeleteBankInternalTransferRPC, callDeleteBankTransactionRPC, callDeleteBankCardRPC, callProcessBankTransactionRPC
 } from '../services/supabaseSync';
 import { getSupabaseCredentials } from '../lib/supabase';
+import { loadSaaSContext, signInSaaSAccount, signOutSaaSAccount } from '../services/saas';
 import { getOfflineQueue, enqueueOfflineItem, removeFromOfflineQueue, waitForOfflineQueueReady } from '../services/offlineQueue';
 import { normalizeSemanticText, areSemanticallyEqual } from '../utils/textUtils';
 import { localStateStorage, clearLocalStateStorage, flushLocalStateStorage } from '../services/localStateStorage';
@@ -339,99 +340,24 @@ export const useStore = create<AppState>()(
       idnSettlementPrices: [],
       currentUser: null,
   login: async (email, pass) => {
-    const cleanIdentifier = (email || '').trim().toLowerCase();
-    
-    // 1. Intentar buscar en los usuarios locales (que vienen de Supabase sincronizados o INITIAL_USERS)
-    let user = get().users.find(u => 
-      u.isActive !== false &&
-      ((u.email || '').trim().toLowerCase() === cleanIdentifier || (u.name || '').trim().toLowerCase() === cleanIdentifier) && 
-      u.password === pass
-    );
-    
-    // 2. Fallback de emergencia para cuentas administrativas críticas (siempre funcionan offline)
-    if (!user) {
-      if ((cleanIdentifier === 'cristianmarco2003@gmail.com' || cleanIdentifier === 'admin') && pass === '03111166702') {
-        user = get().users.find(u => u.id === 'admin-1') || {
-          id: 'admin-1',
-          name: 'Administrador Cristian',
-          email: 'cristianmarco2003@gmail.com',
-          role: 'admin',
-          baseSalary: 0,
-          permissions: ['pos_access', 'reports_access', 'inventory_access', 'admin_access', 'cash_audit'],
-          isActive: true
-        };
-      } else if ((cleanIdentifier === 'trabajador@gmail.com' || cleanIdentifier === 'trabajador') && pass === '03111166702') {
-        user = get().users.find(u => u.id === 'employee-1') || {
-          id: 'employee-1',
-          name: 'Trabajador',
-          email: 'trabajador@gmail.com',
-          role: 'employee',
-          baseSalary: 0,
-          permissions: ['pos_access'],
-          isActive: true
-        };
-      }
-    }
-
-    if (user) {
-      set({ currentUser: user });
-      
-      // Auto-asignación de sucursal
-      if (user.isIndependent && user.assignedBranchId) {
-        set({ currentBranchId: user.assignedBranchId });
-      } else if (user.branchId) {
-        set({ currentBranchId: user.branchId });
-      } else if (!get().currentBranchId && (get().branches || []).length > 0) {
-        set({ currentBranchId: (get().branches || [])[0].id });
-      }
-
-      // Cargar el directorio global antes de mostrar el POS. Esto evita que
-      // una tablet con caché antiguo muestre un selector sin los empleados
-      // que ya están registrados en Configuración.
-      if (typeof navigator === 'undefined' || navigator.onLine) {
-        try {
-          await get().refreshGlobalCatalogData();
-        } catch (syncError) {
-          console.warn('[login] No se pudo refrescar el directorio de empleados; se conserva el caché local.', syncError);
-        }
-      }
-      
+    try {
+      const { data, error } = await signInSaaSAccount(email, pass);
+      if (error || !data.user) return false;
+      const ctx = await loadSaaSContext();
+      if (!ctx) return false;
+      set({
+        currentUser: ctx.user,
+        currentBranchId: ctx.warehouseIds[0] || get().currentBranchId || ''
+      });
       return true;
+    } catch {
+      return false;
     }
-    return false;
   },
-  quickLogin: async () => {
-    const user = get().users.find(u => u.id === 'admin-1') || {
-      id: 'admin-1',
-      name: 'Administrador Cristian',
-      email: 'cristianmarco2003@gmail.com',
-      role: 'admin',
-      baseSalary: 0,
-      permissions: ['pos_access', 'reports_access', 'inventory_access', 'admin_access', 'cash_audit'],
-      isActive: true
-    };
-
-    set({ currentUser: user });
-
-    if (user.isIndependent && user.assignedBranchId) {
-      set({ currentBranchId: user.assignedBranchId });
-    } else if (user.branchId) {
-      set({ currentBranchId: user.branchId });
-    } else if (!get().currentBranchId && (get().branches || []).length > 0) {
-      set({ currentBranchId: (get().branches || [])[0].id });
-    }
-
-    if (typeof navigator === 'undefined' || navigator.onLine) {
-      try {
-        await get().refreshGlobalCatalogData();
-      } catch (syncError) {
-        console.warn('[quickLogin] No se pudo refrescar el directorio de empleados; se conserva el caché local.', syncError);
-      }
-    }
-
-    return true;
+  logout: () => {
+    void signOutSaaSAccount();
+    set({ currentUser: null, cart: [], activeSessionId: null });
   },
-  logout: () => set({ currentUser: null, cart: [], activeSessionId: null }), // LIMPIAR CONTEXTO DEL POS AL SALIR
   clearAllData: async () => {
     // A full reset must never leave durable business operations behind.
     // Otherwise the cloud is emptied and the offline queue can repopulate it
