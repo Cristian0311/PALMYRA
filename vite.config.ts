@@ -59,7 +59,7 @@ export default defineConfig(() => {
           ],
           runtimeCaching: [
             {
-              urlPattern: /^https:\/\/mszojsqwilfqqcaycxch\.supabase\.co\/(rest|auth|storage|functions)\/.*$/i,
+              urlPattern: /^https:\/\/hmcvujyqloyjdvngpdxz\.supabase\.co\/(rest|auth|storage|functions)\/.*$/i,
               handler: 'NetworkOnly',
               options: { cacheName: 'supabase-network-only' }
             },
