@@ -206,7 +206,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               n.type === 'success' ? "bg-emerald-50 border-emerald-100 text-emerald-800" :
               n.type === 'error' ? "bg-rose-50 border-rose-100 text-rose-800" :
               n.type === 'warning' ? "bg-amber-50 border-amber-100 text-amber-800" :
-              "bg-indigo-50 border-rose-100 text-rose-800"
+              "bg-rose-50 border-rose-100 text-rose-800"
             )}
           >
             <div className="shrink-0">
@@ -320,7 +320,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 !isOnline
                   ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
                   : pendingOfflineCount > 0
-                  ? "bg-rose-500/10 text-rose-600 dark:text-indigo-400 border-indigo-500/20 hover:bg-rose-500/20 cursor-pointer"
+                  ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 hover:bg-rose-500/20 cursor-pointer"
                   : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
               )}
               title={pendingOfflineCount > 0 ? "Clic para sincronizar datos pendientes con Supabase" : undefined}
@@ -381,12 +381,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             Usa la ruta destino para no mostrar el nombre de otra sección. */}
         {isNavigating && (
           <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none px-4" aria-live="polite" aria-busy="true">
-            <div className="omni-loading-bubble">
-              <span className="omni-loading-icon" aria-hidden="true">
-                <span className="omni-loading-spinner" />
+            <div className="palmyra-loading-bubble">
+              <span className="palmyra-loading-icon" aria-hidden="true">
+                <span className="palmyra-loading-spinner" />
               </span>
               <span className="min-w-0">{loadingLabelByPath[navigationTargetPath || location.pathname] || "Cargando sección…"}</span>
-              <span className="omni-loading-dots" aria-hidden="true">•••</span>
+              <span className="palmyra-loading-dots" aria-hidden="true">•••</span>
             </div>
           </div>
         )}
