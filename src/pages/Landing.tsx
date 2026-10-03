@@ -3,7 +3,7 @@ import {
   ArrowRight, BarChart3, Boxes, Check, ChevronDown, ChevronRight, Cloud,
   CreditCard, Gauge, Menu, Package, ReceiptText, ShieldCheck, ShoppingCart,
   Sparkles, Store, Users, WalletCards, X, Zap, Building2, Warehouse,
-  UserRound, Settings2, CircleCheck, Network, Landmark, Layers3
+  UserRound, Settings2, CircleCheck, Network, Landmark, Layers3, Mail
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { PALMYRA_PLANS } from '../config/saas';
@@ -37,7 +37,7 @@ function Brand({ dark = false }: { dark?: boolean }) {
         <CamelMark className="h-7 w-9" />
       </div>
       <div>
-        <div className={`text-lg font-black tracking-[-.04em] ${dark ? 'text-white' : 'text-[#241622]'}`}>PALMYRA <span className="text-[#C65B87]">POS</span></div>
+        <div className={`text-lg font-black tracking-[-.04em] ${dark ? 'text-white' : 'text-[#241622]'}`}>PALMYRA</div>
         <div className={`text-[9px] font-extrabold uppercase tracking-[.22em] ${dark ? 'text-pink-200/60' : 'text-[#9B7E96]'}`}>Commerce OS</div>
       </div>
     </div>
@@ -106,6 +106,9 @@ function ProductWindow({ type }: { type: 'dashboard' | 'pos' | 'inventory' }) {
 export default function Landing() {
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [openFaq, setOpenFaq] = React.useState<number | null>(0);
+  const [accountOpen, setAccountOpen] = React.useState(false);
+  const [accountEmail, setAccountEmail] = React.useState('');
+  const [accountPassword, setAccountPassword] = React.useState('');
 
   React.useEffect(() => {
     const root = document.documentElement, body = document.body, appRoot = document.getElementById('root');
@@ -125,9 +128,26 @@ export default function Landing() {
             <a href="#precios" className="transition hover:text-[#C65B87]">Planes</a>
             <a href="#faq" className="transition hover:text-[#C65B87]">FAQ</a>
           </nav>
-          <div className="hidden items-center gap-2 md:flex">
-            <Link to="/login" className="rounded-xl px-4 py-2.5 text-sm font-black text-slate-700 hover:bg-[#F5E6EE]">Iniciar sesión</Link>
-            <Link to="/signup" className="rounded-xl bg-[#241622] px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-[#241622]/15 hover:bg-[#4b2438]">Crear cuenta <ArrowRight className="ml-1 inline h-4 w-4"/></Link>
+          <div className="relative hidden items-center gap-2 md:flex">
+            <button type="button" onClick={() => setAccountOpen(v => !v)} aria-expanded={accountOpen} className="inline-flex items-center gap-2 rounded-xl border border-[#dfcedc] bg-white px-4 py-2.5 text-sm font-black text-[#3c2a3a] shadow-sm hover:border-[#C65B87] hover:bg-[#FBF5F8]">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#F0E7F3] text-[#6C4B70]"><UserRound className="h-3.5 w-3.5"/></span>
+              Cuenta
+              <ChevronDown className={accountOpen ? 'h-4 w-4 rotate-180' : 'h-4 w-4'}/>
+            </button>
+            {accountOpen && (
+              <div className="absolute right-0 top-[calc(100%+10px)] z-[70] w-[320px] overflow-hidden rounded-[1.4rem] border border-[#e6d7e2] bg-white p-4 shadow-[0_24px_70px_rgba(56,30,56,.18)]">
+                <div className="flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#F3EAF5] text-[#6C4B70]"><Mail className="h-4 w-4"/></div><div><div className="text-[9px] font-black uppercase tracking-[.16em] text-[#9B859B]">Acceso rápido</div><div className="text-sm font-black text-[#241622]">Entra a PALMYRA</div></div></div>
+                <div className="mt-4 grid gap-2.5">
+                  <input value={accountEmail} onChange={e => setAccountEmail(e.target.value)} type="email" autoComplete="email" placeholder="correo@empresa.com" className="h-11 w-full rounded-xl border border-[#e4d8e1] bg-[#FBF8FA] px-3 text-sm outline-none focus:border-[#C65B87] focus:ring-4 focus:ring-[#F4DCE7]"/>
+                  <input value={accountPassword} onChange={e => setAccountPassword(e.target.value)} type="password" autoComplete="current-password" placeholder="Contraseña" className="h-11 w-full rounded-xl border border-[#e4d8e1] bg-[#FBF8FA] px-3 text-sm outline-none focus:border-[#C65B87] focus:ring-4 focus:ring-[#F4DCE7]"/>
+                  <Link to="/login" className="mt-1 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#5E3D62] px-4 text-sm font-black text-white hover:bg-[#4b304e]">Continuar <ArrowRight className="h-4 w-4"/></Link>
+                </div>
+                <div className="mt-3 flex items-center justify-between border-t border-[#eee5eb] pt-3 text-[11px]">
+                  <span className="text-[#8c7a8d]">Primera vez aquí?</span>
+                  <Link to="/signup" className="font-black text-[#B94E7D] hover:underline">Crear cuenta</Link>
+                </div>
+              </div>
+            )}
           </div>
           <button className="rounded-xl p-2 hover:bg-[#F5E6EE] md:hidden" onClick={() => setMobileMenu(v => !v)} aria-label={mobileMenu ? 'Cerrar menú' : 'Abrir menú'}>{mobileMenu ? <X/> : <Menu/>}</button>
         </div>
@@ -154,11 +174,6 @@ export default function Landing() {
           </div>
         </section>
 
-        <section className="border-b border-[#f0dfe7] bg-white">
-          <div className="mx-auto grid max-w-7xl grid-cols-2 sm:grid-cols-4 lg:px-8">
-            {[['$10','plan inicial / mes'],['50','SKUs en Starter'],['7','almacenes en Pro'],['24/7','acceso a la plataforma']].map(([value,label]) => <div key={label} className="border-r border-[#f0dfe7] px-4 py-6 text-center last:border-r-0"><div className="text-2xl font-black tracking-tight">{value}</div><div className="mt-1 text-[9px] font-extrabold uppercase tracking-[.1em] text-[#9B7E96]">{label}</div></div>)}
-          </div>
-        </section>
         <section id="palmyra" className="relative overflow-hidden bg-[#241622] text-white">
           <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-[#C65B87]/20 blur-3xl" />
           <div className="absolute -right-24 bottom-0 h-80 w-80 rounded-full bg-[#A99ABF]/15 blur-3xl" />
@@ -208,27 +223,57 @@ export default function Landing() {
         </section>
 
         
-        <section id="precios" className="bg-[#FAF6F2]">
-          <div className="mx-auto max-w-7xl px-5 py-20 lg:px-8 lg:py-24">
-            <div className="mx-auto max-w-3xl text-center"><div className="text-[10px] font-black uppercase tracking-[.22em] text-[#C65B87]">Arquitectura de precios</div><h2 className="mt-3 text-4xl font-black tracking-[-.05em] sm:text-5xl">Planes que se entienden en segundos.</h2><p className="mt-4 text-base leading-7 text-[#6A5D6B] sm:text-lg">Quitamos el exceso visual y convertimos los planes en una comparación empresarial limpia: precio, capacidad y acción.</p></div>
-            <div className="mt-12 grid gap-4 lg:grid-cols-3">
+        <section id="precios" className="relative overflow-hidden bg-[#241622] text-white">
+          <div className="absolute -left-24 top-20 h-72 w-72 rounded-full bg-[#C65B87]/18 blur-3xl"/>
+          <div className="absolute -right-28 bottom-0 h-80 w-80 rounded-full bg-[#9B83AE]/16 blur-3xl"/>
+          <div className="relative mx-auto max-w-7xl px-5 py-18 lg:px-8 lg:py-20">
+            <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+              <div className="max-w-2xl">
+                <div className="text-[10px] font-black uppercase tracking-[.22em] text-[#E7B1C7]">Planes PALMYRA</div>
+                <h2 className="mt-2 text-3xl font-black tracking-[-.05em] sm:text-4xl">Elige capacidad. Mantén la misma operación.</h2>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-white/55">Cada plan define capacidad de almacenes, equipo y catálogo. La estructura del sistema permanece igual para que crecer no signifique aprender otra herramienta.</p>
+              </div>
+              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.05] px-3 py-2 text-[9px] font-black uppercase tracking-[.12em] text-white/50"><ShieldCheck className="h-4 w-4 text-[#E7B1C7]"/> Capacidades centralizadas</div>
+            </div>
+            <div className="mt-8 grid gap-3 lg:grid-cols-3">
               {PALMYRA_PLANS.map((plan, index) => (
-                <article key={plan.code} className={index === 1 ? 'relative flex min-h-[520px] flex-col overflow-hidden rounded-[2rem] border border-[#D7B0C5] bg-[#2F1D2C] p-7 text-white shadow-[0_30px_80px_rgba(47,29,44,.20)]' : 'relative flex min-h-[520px] flex-col overflow-hidden rounded-[2rem] border border-[#E5D9E4] bg-white p-7 text-[#241622] shadow-[0_18px_50px_rgba(36,22,34,.06)]'}>
-                  {index === 1 && <div className="absolute right-5 top-5 rounded-full bg-[#C65B87] px-3 py-1.5 text-[8px] font-black uppercase tracking-[.14em] text-white">Más capacidad</div>}
-                  <div className="flex items-start justify-between gap-4"><div><div className={index === 1 ? 'text-[9px] font-black uppercase tracking-[.18em] text-[#E7B1C7]' : 'text-[9px] font-black uppercase tracking-[.18em] text-[#9A8297]'}>0{index + 1} · Plan</div><h3 className="mt-2 text-2xl font-black">{plan.name}</h3></div><div className={index === 0 ? 'flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F5E6EE] text-[#C65B87]' : index === 1 ? 'flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C65B87]/15 text-[#E7B1C7]' : 'flex h-11 w-11 items-center justify-center rounded-2xl bg-[#EEE7F2] text-[#725A80]'}>{index === 0 ? <Store className="h-5 w-5"/> : index === 1 ? <Gauge className="h-5 w-5"/> : <Boxes className="h-5 w-5"/>}</div></div>
-                  <div className="mt-8 flex items-end gap-1"><span className="text-5xl font-black tracking-[-.05em]">{plan.price}</span><span className={index === 1 ? 'pb-2 text-sm text-white/45' : 'pb-2 text-sm text-[#8B788A]'}>/mes</span></div>
-                  <p className={index === 1 ? 'mt-3 min-h-[72px] text-sm leading-6 text-white/55' : 'mt-3 min-h-[72px] text-sm leading-6 text-[#6C5E6C]'}>{plan.description}</p>
-                  <div className={index === 1 ? 'my-5 grid grid-cols-3 border-y border-white/10 py-4' : 'my-5 grid grid-cols-3 border-y border-[#EEE6ED] py-4'}>
-                    <div><div className={index === 1 ? 'text-[8px] uppercase tracking-widest text-white/35' : 'text-[8px] uppercase tracking-widest text-[#9A8297]'}>Almacenes</div><div className="mt-1 text-xl font-black">{plan.warehouses}</div></div>
-                    <div className={index === 1 ? 'border-x border-white/10 px-3' : 'border-x border-[#EEE6ED] px-3'}><div className={index === 1 ? 'text-[8px] uppercase tracking-widest text-white/35' : 'text-[8px] uppercase tracking-widest text-[#9A8297]'}>Equipo</div><div className="mt-1 text-xl font-black">{plan.employees}</div></div>
-                    <div className="pl-3"><div className={index === 1 ? 'text-[8px] uppercase tracking-widest text-white/35' : 'text-[8px] uppercase tracking-widest text-[#9A8297]'}>SKUs</div><div className="mt-1 text-xl font-black">{plan.products}</div></div>
+                <article key={plan.code} className={index === 1 ? 'relative overflow-hidden rounded-[1.45rem] border border-[#C65B87]/70 bg-[#3A2639] p-5 shadow-[0_26px_60px_rgba(0,0,0,.18)]' : 'relative overflow-hidden rounded-[1.45rem] border border-white/10 bg-white/[.045] p-5'}>
+                  {index === 1 && <div className="absolute right-4 top-4 rounded-lg bg-[#E7B1C7] px-2.5 py-1.5 text-[8px] font-black uppercase tracking-[.14em] text-[#3b2437]">Más equilibrado</div>}
+                  <div className="flex items-center gap-3">
+                    <div className={index===0 ? 'flex h-10 w-10 items-center justify-center rounded-xl bg-[#F1DDE7] text-[#74445C]' : index===1 ? 'flex h-10 w-10 items-center justify-center rounded-xl bg-[#C65B87]/20 text-[#F2C6D7]' : 'flex h-10 w-10 items-center justify-center rounded-xl bg-[#D8C7E2]/15 text-[#D8C7E2]'}>
+                      <svg viewBox="0 0 32 32" className="h-5 w-5" fill="none" aria-hidden="true">{index===0 ? <><path d="M8 8.5h16v15H8z" stroke="currentColor" strokeWidth="1.8" rx="3"/><path d="M11 12h10M11 16h7M11 20h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></> : index===1 ? <><path d="M5 13.5 16 7l11 6.5v8.8L16 27 5 22.3z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M16 7v20M5 13.5l11 6 11-6" stroke="currentColor" strokeWidth="1.4"/></> : <><path d="M7 23.5V13l5-4 5 4v10.5M17 23.5V9l5 4v10.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M6 25h20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></>}</svg>
+                    </div>
+                    <div><div className="text-[9px] font-black uppercase tracking-[.18em] text-white/35">0{index+1} · capacidad</div><h3 className="mt-0.5 text-xl font-black">{plan.name}</h3></div>
                   </div>
-                  <div className="space-y-2.5">{plan.features.map(feature => <div key={feature} className={index === 1 ? 'flex gap-2 text-sm text-white/75' : 'flex gap-2 text-sm text-[#514452]'}><Check className={index === 1 ? 'mt-0.5 h-4 w-4 shrink-0 text-[#E7B1C7]' : 'mt-0.5 h-4 w-4 shrink-0 text-[#C65B87]'}/><span>{feature}</span></div>)}</div>
-                  <Link to={'/signup?plan=' + plan.code} className={index === 1 ? 'mt-auto flex items-center justify-center gap-2 rounded-xl bg-[#C65B87] px-4 py-3.5 text-sm font-black text-white' : 'mt-auto flex items-center justify-center gap-2 rounded-xl bg-[#241622] px-4 py-3.5 text-sm font-black text-white'}>Elegir {plan.name}<ArrowRight className="h-4 w-4"/></Link>
+                  <div className="mt-5 flex items-end gap-1"><span className="text-4xl font-black tracking-[-.05em]">{'$'}{plan.price}</span><span className="pb-1 text-xs text-white/40">/mes</span></div>
+                  <p className="mt-2 min-h-[48px] text-xs leading-5 text-white/50">{plan.description}</p>
+                  <div className="mt-4 grid grid-cols-3 overflow-hidden rounded-xl border border-white/10 bg-black/10">
+                    {[
+                      ['Almacenes', plan.warehouses, 'warehouse'],
+                      ['Equipo', plan.employees, 'team'],
+                      ['SKUs', plan.products, 'sku']
+                    ].map(([label, value, icon], metricIndex) => <div key={String(label)} className={metricIndex>0 ? 'border-l border-white/10 px-2.5 py-3' : 'px-2.5 py-3'}>
+                      <div className="flex items-center gap-1.5 text-[8px] font-black uppercase tracking-[.12em] text-white/35">
+                        {icon==='warehouse' ? <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none"><path d="M3 10 12 4l9 6v9H3z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/><path d="M8 21v-6h8v6" stroke="currentColor" strokeWidth="1.7"/></svg> : icon==='team' ? <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none"><circle cx="9" cy="8" r="3" stroke="currentColor" strokeWidth="1.7"/><circle cx="17" cy="10" r="2.3" stroke="currentColor" strokeWidth="1.7"/><path d="M3.5 19c.4-3.3 2.4-5 5.5-5s5.1 1.7 5.5 5M14 19c.2-2.1 1.2-3.3 3-3.3 1.8 0 2.8 1.2 3 3.3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg> : <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none"><rect x="4" y="4" width="16" height="16" rx="4" stroke="currentColor" strokeWidth="1.7"/><path d="M8 9h8M8 13h5M8 17h3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>}
+                        {label}
+                      </div>
+                      <div className="mt-1 text-lg font-black text-white">{value}</div>
+                    </div>)}
+                  </div>
+                  <div className="mt-4 grid gap-1.5">
+                    {plan.features.map(feature => <div key={feature} className="flex items-start gap-2 text-xs text-white/65"><svg viewBox="0 0 20 20" className="mt-0.5 h-4 w-4 shrink-0 text-[#E7B1C7]" fill="none" aria-hidden="true"><path d="m5 10 3 3 7-7" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"/></svg><span>{feature}</span></div>)}
+                  </div>
+                  <Link to={'/signup?plan=' + plan.code} className={index===1 ? 'mt-5 flex h-10 items-center justify-center gap-2 rounded-xl bg-[#E7B1C7] px-4 text-xs font-black text-[#392535] hover:bg-white' : 'mt-5 flex h-10 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[.06] px-4 text-xs font-black text-white hover:border-[#E7B1C7] hover:bg-[#C65B87]'}>Comenzar con {plan.name}<ArrowRight className="h-3.5 w-3.5"/></Link>
                 </article>
               ))}
             </div>
-            <div className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[10px] font-extrabold uppercase tracking-[.1em] text-[#9A8297]"><span>Precio centralizado</span><span>•</span><span>Límites sincronizados</span><span>•</span><span>Sin datos duplicados</span></div>
+            <div className="mt-5 grid gap-2 sm:grid-cols-3">
+              {[
+                ['Sin cargos ocultos','La capacidad está descrita en cada plan.'],
+                ['Escala sin rediseño','La empresa conserva la misma estructura.'],
+                ['Acceso continuo','La plataforma permanece disponible para tu equipo.']
+              ].map(([title, body], i) => <div key={title} className="flex items-start gap-2.5 rounded-xl border border-white/8 bg-white/[.025] px-3 py-3"><svg viewBox="0 0 24 24" className="mt-0.5 h-4 w-4 shrink-0 text-[#E7B1C7]" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.6"/><path d={i===0 ? "M8.5 12h7" : i===1 ? "M8.5 12.5 11 15l4.5-5" : "M12 8v8M8 12h8"} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg><div><div className="text-[10px] font-black text-white/80">{title}</div><div className="mt-0.5 text-[10px] leading-5 text-white/35">{body}</div></div></div>)}
+            </div>
           </div>
         </section>
 
