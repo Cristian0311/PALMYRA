@@ -1,0 +1,182 @@
+import type { User } from '../types';
+import { getSupabase } from '../lib/supabase';
+import { slugifyCompany, type PlanCode } from '../config/saas';
+
+export interface SaaSContext {
+  authUserId: string;
+  user: User;
+  companyId: string | null;
+  company: { id: string; name: string; slug: string; account_status: string; default_currency_code: string } | null;
+  roleKey: string;
+  warehouseIds: string[];
+  subscription: {
+    id: string;
+    status: string;
+    planCode: string;
+    planName: string;
+    limits: { warehouses?: number; employees?: number; products?: number; reports?: string; support?: string };
+    currentPeriodEnd?: string | null;
+  } | null;
+}
+
+const mapRole = (key: string): 'admin' | 'employee' => key === 'admin' ? 'admin' : 'employee';
+
+export async function signUpSaaSAccount(fullName: string, email: string, password: string) {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase no está configurado.');
+  const origin = window.location.origin;
+  return supabase.auth.signUp({
+    email: email.trim().toLowerCase(),
+    password,
+    options: {
+      data: { full_name: fullName.trim(), product: 'PALMYRA POS' },
+      emailRedirectTo: `${origin}/login`
+    }
+  });
+}
+
+export async function signInSaaSAccount(email: string, password: string) {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase no está configurado.');
+  return supabase.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password
+  });
+}
+
+export async function signOutSaaSAccount() {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  await supabase.auth.signOut();
+}
+
+export async function getAuthenticatedUser() {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getUser();
+  if (error) return null;
+  return data.user || null;
+}
+
+export async function loadSaaSContext(): Promise<SaaSContext | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  const { data: authData } = await supabase.auth.getUser();
+  const authUser = authData.user;
+  if (!authUser) return null;
+
+  const [{ data: profile }, { data: membership }] = await Promise.all([
+    supabase.from('profiles').select('full_name,phone,active_company_id').eq('id', authUser.id).maybeSingle(),
+    supabase.from('company_memberships').select('company_id,is_owner,status').eq('user_id', authUser.id).eq('status','active').maybeSingle()
+  ]);
+
+  const companyId = profile?.active_company_id || membership?.company_id || null;
+  if (!companyId) {
+    return {
+      authUserId: authUser.id,
+      user: {
+        id: authUser.id,
+        name: profile?.full_name || authUser.user_metadata?.full_name || authUser.email || 'Administrador',
+        email: authUser.email || '',
+        role: 'admin',
+        baseSalary: 0,
+        permissions: [],
+        isActive: true
+      },
+      companyId: null,
+      company: null,
+      roleKey: 'admin',
+      warehouseIds: [],
+      subscription: null
+    };
+  }
+
+  const [{ data: company }, { data: userRole }, { data: locations }, { data: employee }, { data: subscription }] = await Promise.all([
+    supabase.from('companies').select('id,name,slug,account_status,default_currency_code').eq('id',companyId).maybeSingle(),
+    supabase.from('user_roles').select('role_id,roles!inner(key,name)').eq('user_id',authUser.id).eq('company_id',companyId).maybeSingle(),
+    supabase.from('user_locations').select('warehouse_id,is_default').eq('user_id',authUser.id).eq('company_id',companyId).order('is_default',{ascending:false}),
+    supabase.from('employees').select('id,full_name,base_salary,active').eq('user_id',authUser.id).eq('company_id',companyId).maybeSingle(),
+    supabase.from('subscriptions').select('id,status,plan_id,current_period_end,plans!inner(code,name,limits,features)').eq('company_id',companyId).order('updated_at',{ascending:false}).maybeSingle()
+  ]);
+
+  const roleKey = (userRole as any)?.roles?.key || (membership?.is_owner ? 'admin' : 'employee');
+  const warehouseIds = (locations || []).map((row:any) => row.warehouse_id).filter(Boolean);
+  const permissions = roleKey === 'admin'
+    ? ['pos_access','reports_access','inventory_access','admin_access','cash_audit']
+    : ['pos_access'];
+
+  const user: User = {
+    id: authUser.id,
+    name: employee?.full_name || profile?.full_name || authUser.user_metadata?.full_name || authUser.email || 'Usuario',
+    email: authUser.email || '',
+    role: mapRole(roleKey),
+    baseSalary: Number(employee?.base_salary) || 0,
+    permissions,
+    isActive: employee?.active !== false,
+    branchId: warehouseIds[0],
+    allowedBranches: warehouseIds
+  };
+
+  const plan = (subscription as any)?.plans;
+  return {
+    authUserId: authUser.id,
+    user,
+    companyId,
+    company: company || null,
+    roleKey,
+    warehouseIds,
+    subscription: subscription && plan ? {
+      id: subscription.id,
+      status: subscription.status,
+      planCode: plan.code,
+      planName: plan.name,
+      limits: plan.limits || {},
+      currentPeriodEnd: subscription.current_period_end
+    } : null
+  };
+}
+
+export async function createCompanyOnboarding(input: {
+  name: string;
+  warehouseName: string;
+  employeeName?: string;
+  employeeCode?: string;
+  planCode: PlanCode;
+}) {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase no está configurado.');
+
+  const payload = {
+    p_name: input.name.trim(),
+    p_slug: slugifyCompany(input.name),
+    p_country_code: 'PR',
+    p_default_currency_code: 'USD',
+    p_timezone: 'America/Puerto_Rico',
+    p_warehouse_name: input.warehouseName.trim(),
+    p_plan_code: input.planCode,
+    p_employee_name: input.employeeName?.trim() || null,
+    p_employee_code: input.employeeCode?.trim() || null
+  };
+
+  const { data, error } = await supabase.rpc('palmyra_onboard_company', payload);
+  if (error) throw error;
+  return data as {
+    company_id: string;
+    warehouse_id: string;
+    employee_id?: string | null;
+    subscription_id: string;
+    plan_code: string;
+    current_period_end: string;
+  };
+}
+
+export async function selectCompanyPlan(companyId: string, planCode: PlanCode) {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase no está configurado.');
+  const { data: plan, error: planError } = await supabase.from('plans').select('id,code').eq('code',planCode).maybeSingle();
+  if (planError || !plan) throw planError || new Error('Plan no encontrado.');
+  const { data, error } = await supabase.rpc('select_company_plan', { p_company_id: companyId, p_plan_id: plan.id });
+  if (error) throw error;
+  return data;
+}
