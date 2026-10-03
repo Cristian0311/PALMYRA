@@ -84,7 +84,7 @@ function formatWorksheet(ws: XLSX.WorkSheet, data: any[][], headerRowIndex = 0, 
 // 1. SHEET: RESUMEN FINANCIERO Y EJECUTIVO
 export function generateSummarySheet(data: ExcelExportData): any[][] {
   const { 
-    businessName = 'MARÉ POS', transactions, cashSessions, 
+    businessName = 'PALMYRA POS', transactions, cashSessions, 
     currencies, baseCurrency, dateFilterLabel = 'Todo el historial',
     bankTransactions, bankCards 
   } = data;
@@ -848,77 +848,8 @@ export function exportFullReportsToExcel(data: ExcelExportData) {
     XLSX.utils.book_append_sheet(wb, aiWs, 'Diagnóstico IA');
   }
 
-  const fileName = `Reporte_General_${data.businessName ? data.businessName.replace(/\s+/g, '_') : 'MARE'}_${new Date().toISOString().split('T')[0]}.xlsx`;
+  const fileName = `Reporte_General_${data.businessName ? data.businessName.replace(/\s+/g, '_') : 'PALMYRA'}_${new Date().toISOString().split('T')[0]}.xlsx`;
   XLSX.writeFile(wb, fileName);
-}
-
-// SHEET: LIQUIDACIONES IDN (VENDEDORES INDEPENDIENTES)
-export function generateIDNSettlementsSheet(data: ExcelExportData): any[][] {
-  const { transactions, users, branches, products } = data;
-  
-  const idnTx = transactions.filter(t => 
-    t.id.startsWith('LIQ-IDN-') || 
-    t.notes === 'LIQUIDACION_IDN' || 
-    users.find(u => u.id === t.userId)?.isIndependent === true
-  );
-
-  const rows: any[][] = [
-    [
-      'ID Vale / Código',
-      'Fecha y Hora',
-      'Vendedor Independiente',
-      'Almacén / Sucursal',
-      'Unidades Vendidas',
-      'Total Liquidado (CUP)',
-      'Venta Pública Estimada (CUP)',
-      'Ganancia Negocio (CUP)',
-      'Ganancia Vendedor IDN (CUP)',
-      'Detalle de Productos'
-    ]
-  ];
-
-  idnTx.forEach(tx => {
-    const worker = users.find(u => u.id === tx.userId);
-    const workerName = tx.cashierName || worker?.name || 'Vendedor IDN';
-    const branchName = branches.find(b => b.id === tx.branchId)?.name || 'Almacén Asignado';
-    
-    let totalUnits = 0;
-    let totalPublic = 0;
-    let totalCost = 0;
-    const itemsSummary: string[] = [];
-
-    (tx.items || []).forEach(item => {
-      const prod = products.find(p => p.id === (typeof item.product === 'string' ? item.product : item.product?.id));
-      const qty = item.quantity || 0;
-      const settlementPrice = item.price || 0;
-      const publicPrice = prod?.price || item.product?.price || settlementPrice;
-      const costPrice = prod?.costPrice || item.product?.costPrice || 0;
-
-      totalUnits += qty;
-      totalPublic += (publicPrice * qty);
-      totalCost += (costPrice * qty);
-      itemsSummary.push(`${qty}x ${prod?.name || item.product?.name || 'Producto'} (Liq: $${settlementPrice})`);
-    });
-
-    const totalSettled = tx.total || 0;
-    const companyProfit = totalSettled - totalCost;
-    const workerProfit = totalPublic - totalSettled;
-
-    rows.push([
-      tx.id,
-      new Date(tx.date).toLocaleString('es-CU'),
-      workerName,
-      branchName,
-      totalUnits,
-      totalSettled,
-      totalPublic,
-      companyProfit,
-      workerProfit,
-      itemsSummary.join('; ')
-    ]);
-  });
-
-  return rows;
 }
 
 // SHEET: DESCUADRES Y CIERRES FORZADOS
@@ -1157,7 +1088,7 @@ export function generateTransfersSheet(data: ExcelExportData): any[][] {
 
 // EXPORT SINGLE SECTION
 export function exportSingleSectionToExcel(
-  section: 'summary' | 'sales' | 'items' | 'sessions' | 'payroll' | 'products' | 'returns' | 'banks' | 'idn' | 'discrepancies' | 'movements' | 'transfers',
+  section: 'summary' | 'sales' | 'items' | 'sessions' | 'payroll' | 'products' | 'returns' | 'banks' | 'discrepancies' | 'movements' | 'transfers',
   data: ExcelExportData
 ) {
   const wb = XLSX.utils.book_new();
@@ -1192,10 +1123,7 @@ export function exportSingleSectionToExcel(
   } else if (section === 'banks') {
     aoa = generateBankMovementsSheet(data);
     sheetName = 'Movimientos Bancarios';
-  } else if (section === 'idn') {
-    aoa = generateIDNSettlementsSheet(data);
-    sheetName = 'Liquidaciones IDN';
-  } else if (section === 'discrepancies') {
+  }  else if (section === 'discrepancies') {
     aoa = generateDiscrepanciesSheet(data);
     sheetName = 'Descuadres y Cierres';
   } else if (section === 'movements') {
