@@ -7,10 +7,6 @@ import { useShallow } from 'zustand/react/shallow';
 import { useEffect, useState, lazy, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./components/Layout";
-import Login from "./pages/Login";
-import Landing from "./pages/Landing";
-import Signup from "./pages/Signup";
-import Onboarding from "./pages/Onboarding";
 import { loadSaaSContext } from "./services/saas";
 import { useStore } from "./store/useStore";
 import { initMultiDeviceRealtimeSync } from "./services/realtimeSync";
@@ -81,8 +77,8 @@ export default function App() {
           useStore.setState({ currentUser: ctx.user, currentBranchId: ctx.warehouseIds[0] || '' });
           setHasCompany(Boolean(ctx.companyId));
         } else {
-          useStore.setState({ currentUser: null, currentBranchId: '' });
-          setHasCompany(false);
+          ensureLocalAdmin();
+          setHasCompany(true);
         }
       } finally {
         if (active) setAuthBootstrapping(false);
@@ -198,18 +194,8 @@ export default function App() {
       <Router>
         <Suspense fallback={<PageLoading />}>
           <Routes>
-          <Route path="/landing" element={<Landing />} />
           <Route path="/shop" element={<CustomerShop />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/onboarding" element={
-            !currentUser ? <Navigate to="/login" replace /> :
-            hasCompany ? <Navigate to="/" replace /> :
-            <Onboarding />
-          } />
           <Route path="/*" element={
-            !currentUser ? <Landing /> :
-            !hasCompany ? <Navigate to="/onboarding" replace /> : (
               <Layout>
                 <Suspense fallback={<PageLoading />}>
                   <Routes>
