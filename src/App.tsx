@@ -120,7 +120,7 @@ export default function App() {
         return;
       }
       if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
-        void hydrateAuth();
+        window.setTimeout(() => { void hydrateAuth(); }, 0);
       }
     });
 
