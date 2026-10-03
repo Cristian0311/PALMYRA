@@ -210,7 +210,7 @@ export default function Reports() {
     }
     return itemProduct.name || 'Desconocido';
   };
-  const [activeTab, setActiveTab] = useState<'sales' | 'payroll' | 'sessions' | 'discrepancies' | 'movements' | 'idn' | 'transfers'>('sales');
+  const [activeTab, setActiveTab] = useState<'sales' | 'payroll' | 'sessions' | 'discrepancies' | 'movements' | 'transfers'>('sales');
   const [salesViewMode, setSalesViewMode] = useState<'by_shift' | 'all_tickets'>('by_shift');
   const [transferFromFilter, setTransferFromFilter] = useState<string>('all');
   const [transferToFilter, setTransferToFilter] = useState<string>('all');
@@ -352,12 +352,9 @@ export default function Reports() {
     categoryData,
     hourData,
     branchData,
-    idnTransactions,
     filteredTransfers,
     transferStats,
     filteredTransactions,
-    idnWorkerStats,
-    idnTotals
   } = useReportsAnalytics({
     transactions,
     products,
@@ -373,46 +370,6 @@ export default function Reports() {
     transferToFilter,
     transferSearch
   });
-
-  const handlePrintIDNTicket = async (tx: any) => {
-    try {
-      const worker = users.find(u => u.id === tx.userId);
-      const workerName = tx.cashierName || worker?.name || 'Vendedor IDN';
-      const branchName = branches.find(b => b.id === tx.branchId)?.name || 'Almacén';
-
-      const lines: string[] = [
-        "CENTER|BOLD|" + (receiptConfig?.businessName || "MARÉ POS"),
-        "CENTER|VALE LIQUIDACION IDN",
-        "CENTER|" + branchName,
-        "---",
-        `Vale: ${tx.id}`,
-        `Fecha: ${new Date(tx.date).toLocaleString('es-CU')}`,
-        `Vendedor IDN: ${workerName}`,
-        "---",
-        "CANT | PRODUCTO | PRECIO LIQ"
-      ];
-
-      (tx.items || []).forEach((item: any) => {
-        const prod = products.find(p => p.id === (typeof item.product === 'string' ? item.product : item.product?.id));
-        const name = prod?.name || item.product?.name || 'Producto';
-        lines.push(`${item.quantity}x ${name} @ $${item.price || 0}`);
-      });
-
-      lines.push("---");
-      lines.push(`RIGHT|BOLD|TOTAL LIQUIDADO: $${(tx.total || 0).toLocaleString('es-CU')}`);
-      lines.push("---");
-      lines.push("CENTER|ENTREGADO Y REVISADO");
-
-      await printThermalReceipt({
-        lines,
-        width: (receiptConfig?.printerWidth || '58mm') as '58mm' | '80mm'
-      });
-      addNotification("Vale IDN enviado a la impresora.", "success");
-    } catch (err: any) {
-      console.warn("Thermal print error:", err);
-      addNotification(err?.message || "No se pudo imprimir el vale IDN.", "error");
-    }
-  };
 
   // Reconciliar y recuperar sesiones: asegura que ningún turno se pierda,
   // incluso si su registro de sesión fue borrado pero existen transacciones asociadas
@@ -529,9 +486,7 @@ export default function Reports() {
 
     return closedSessions
       .filter(session => {
-        const emp = userById.get(session.userId) || (session.workerName ? userByName.get(session.workerName.trim().toLowerCase()) : undefined);
-        return !emp?.isIndependent;
-      })
+        const emp = userById.get(session.userId) || (session.workerName ? userByName.get(session.workerName.trim().toLowerCase()) : undefined);})
       .map(session => {
         const turnLabel = sessionTurnMap.get(session.id) || session.id;
       const sessionTx = transactionsBySession.get(session.id) || [];
@@ -1303,7 +1258,7 @@ export default function Reports() {
                     onClick={() => handleExportSectionExcel('sales')}
                     className="w-full text-left px-2.5 py-1.5 rounded-lg text-[9px] font-bold text-primary hover:bg-subtle transition-colors flex items-center gap-2"
                   >
-                    <TrendingUp className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <TrendingUp className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     <span>Solo Ventas y Facturas (Totales)</span>
                   </button>
 
@@ -1430,7 +1385,7 @@ export default function Reports() {
                 className={cn(
                   "btn-compact h-8 shrink-0 whitespace-nowrap !text-[11px] font-black",
                   activeTab === tab.id 
-                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" 
+                    ? "bg-rose-600 text-white shadow-md shadow-rose-600/20" 
                     : "bg-subtle text-secondary hover:text-primary hover:bg-slate-200 dark:hover:bg-slate-800 border-none"
                 )}
               >
@@ -1439,7 +1394,7 @@ export default function Reports() {
                 {tab.badge !== undefined && tab.badge > 0 && (
                   <span className={cn(
                     "px-1.5 py-0.2 text-[7px] font-black rounded-full ml-1",
-                    activeTab === tab.id ? "bg-white/30 text-white" : (tab.badgeClass || "bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300")
+                    activeTab === tab.id ? "bg-white/30 text-white" : (tab.badgeClass || "bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300")
                   )}>
                     {tab.badge}
                   </span>
@@ -1453,7 +1408,7 @@ export default function Reports() {
       {/* Visual Analytics Toggle for Mobile */}
       <div className="md:hidden flex items-center justify-between p-2.5 bg-secondary rounded-2xl border border-base shadow-xs">
         <span className="text-[11px] font-black text-primary uppercase tracking-tight flex items-center gap-1.5">
-          <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
+          <BarChart3 className="w-3.5 h-3.5 text-rose-600" />
           Gráficos y Tendencias
         </span>
         <button
@@ -1501,7 +1456,7 @@ export default function Reports() {
         </div>
         
         <div className="bg-secondary p-3 rounded-2xl shadow-sm border border-base flex items-start gap-3">
-          <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+          <div className="w-7 h-7 rounded-lg bg-rose-50 dark:bg-rose-950/50 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
             <TrendingUp className="w-3.5 h-3.5" />
           </div>
           <div className="min-w-0 flex-1">
@@ -1604,7 +1559,7 @@ export default function Reports() {
               onClick={() => setStatusFilter('all')}
               className={cn(
                 "px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all",
-                statusFilter === 'all' ? "bg-indigo-600 text-white shadow-sm" : "text-secondary hover:text-primary hover:bg-secondary"
+                statusFilter === 'all' ? "bg-rose-600 text-white shadow-sm" : "text-secondary hover:text-primary hover:bg-secondary"
               )}
             >
               Todos
@@ -1644,7 +1599,7 @@ export default function Reports() {
               onClick={() => { setSessionFilter('all'); setSelectedFilterDate(''); }}
               className={cn(
                 "px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all",
-                sessionFilter === 'all' && !selectedFilterDate ? "bg-indigo-600 text-white shadow-sm" : "text-secondary hover:text-primary hover:bg-secondary"
+                sessionFilter === 'all' && !selectedFilterDate ? "bg-rose-600 text-white shadow-sm" : "text-secondary hover:text-primary hover:bg-secondary"
               )}
             >
               Histórico ({reconciledSessions.length})
@@ -1653,7 +1608,7 @@ export default function Reports() {
               onClick={() => { setSessionFilter('today'); setSelectedFilterDate(''); }}
               className={cn(
                 "px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all",
-                sessionFilter === 'today' ? "bg-indigo-600 text-white shadow-sm" : "text-secondary hover:text-primary hover:bg-secondary"
+                sessionFilter === 'today' ? "bg-rose-600 text-white shadow-sm" : "text-secondary hover:text-primary hover:bg-secondary"
               )}
             >
               Hoy
@@ -1662,7 +1617,7 @@ export default function Reports() {
               onClick={() => { setSessionFilter('yesterday'); setSelectedFilterDate(''); }}
               className={cn(
                 "px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all",
-                sessionFilter === 'yesterday' ? "bg-indigo-600 text-white shadow-sm" : "text-secondary hover:text-primary hover:bg-secondary"
+                sessionFilter === 'yesterday' ? "bg-rose-600 text-white shadow-sm" : "text-secondary hover:text-primary hover:bg-secondary"
               )}
             >
               Ayer
@@ -1697,11 +1652,11 @@ export default function Reports() {
           <div className="bg-secondary rounded-2xl shadow-sm border border-base p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-xs font-black text-primary uppercase tracking-wider flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <TrendingUp className="w-4 h-4 text-rose-600 dark:text-rose-400" />
                 Registro de Ventas Comerciales
               </h3>
               <p className="text-[8px] font-bold text-muted uppercase tracking-widest mt-0.5">
-                Ventas consecutivas lineales por turno y tickets individuales (Ventas POS + Liquidaciones IDN)
+                Ventas consecutivas lineales por turno y tickets individuales
               </p>
             </div>
 
@@ -1713,7 +1668,7 @@ export default function Reports() {
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer",
                   salesViewMode === 'by_shift'
-                    ? "bg-indigo-600 text-white shadow-xs"
+                    ? "bg-rose-600 text-white shadow-xs"
                     : "text-secondary hover:text-primary"
                 )}
               >
@@ -1727,7 +1682,7 @@ export default function Reports() {
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer",
                   salesViewMode === 'all_tickets'
-                    ? "bg-indigo-600 text-white shadow-xs"
+                    ? "bg-rose-600 text-white shadow-xs"
                     : "text-secondary hover:text-primary"
                 )}
               >
@@ -1780,7 +1735,7 @@ export default function Reports() {
                         <tr key={`${session.id || 'sess'}-${session.openedAt || ''}-${idx}`} className="hover:bg-subtle transition-colors">
                           {/* Turno lineal */}
                           <td className="px-3 py-2 whitespace-nowrap">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/50 tracking-wider">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-100 dark:border-rose-900/50 tracking-wider">
                               {sequentialTurn}
                             </span>
                           </td>
@@ -1860,9 +1815,9 @@ export default function Reports() {
                               <button 
                                 onClick={() => setExpandedSession(session.id)}
                                 title="Ver Detalle Completo del Turno"
-                                className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 rounded-lg text-[9px] font-black uppercase tracking-wider border border-indigo-200 dark:border-indigo-900/50 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                                className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 rounded-lg text-[9px] font-black uppercase tracking-wider border border-rose-200 dark:border-rose-900/50 transition-all active:scale-95 shadow-2xs cursor-pointer"
                               >
-                                <Eye className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                                <Eye className="w-3 h-3 text-rose-600 dark:text-rose-400" />
                                 <span>Detalle</span>
                               </button>
                               <button
@@ -1895,7 +1850,7 @@ export default function Reports() {
             <div className="bg-secondary rounded-2xl shadow-sm border border-base overflow-hidden">
               <div className="p-3 border-b border-base flex items-center justify-between bg-subtle/50">
                 <span className="text-[9px] font-black text-primary uppercase tracking-wider flex items-center gap-1.5">
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600" />
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-rose-600" />
                   Listado Detallado de Tickets y Facturas Individuales
                 </span>
                 <span className="text-[9px] font-bold text-muted">
@@ -1919,7 +1874,7 @@ export default function Reports() {
                   </thead>
                   <tbody className="divide-y divide-base">
                     {filteredTransactions.map((tx) => {
-                      const isIDN = tx.id.startsWith('LIQ-IDN-') || tx.notes === 'LIQUIDACION_IDN' || (tx.notes && tx.notes.includes('IDN'));
+
                       const branchName = branches.find(b => b.id === tx.branchId)?.name || 'Sucursal';
                       const worker = users.find(u => u.id === tx.userId);
                       const workerName = tx.cashierName || worker?.name || 'Vendedor';
@@ -1934,7 +1889,7 @@ export default function Reports() {
                               "inline-flex items-center px-2 py-0.5 rounded text-[9px] font-black font-mono border tracking-wider",
                               isIDN
                                 ? "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
-                                : "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800"
+                                : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800"
                             )}>
                               {tx.id}
                             </span>
@@ -1944,11 +1899,9 @@ export default function Reports() {
                           <td className="px-3 py-2 whitespace-nowrap">
                             <span className={cn(
                               "px-2 py-0.5 rounded text-[7px] font-black uppercase tracking-wider",
-                              isIDN
-                                ? "bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200"
-                                : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                              "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800"
                             )}>
-                              {isIDN ? 'Liquidación IDN' : 'Venta POS'}
+                              Venta POS
                             </span>
                           </td>
 
@@ -1992,18 +1945,14 @@ export default function Reports() {
                                   setSelectedDirectTxModal(tx);
                                 }}
                                 title="Ver Detalle del Ticket de Venta"
-                                className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 rounded-lg text-[9px] font-black uppercase tracking-wider border border-indigo-200 dark:border-indigo-900/50 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                                className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 rounded-lg text-[9px] font-black uppercase tracking-wider border border-rose-200 dark:border-rose-900/50 transition-all active:scale-95 shadow-2xs cursor-pointer"
                               >
-                                <Eye className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                                <Eye className="w-3 h-3 text-rose-600 dark:text-rose-400" />
                                 <span>Detalle</span>
                               </button>
                               <button
                                 onClick={() => {
-                                  if (isIDN) {
-                                    handlePrintIDNTicket(tx, false);
-                                  } else if (tx.sessionId) {
-                                    handlePrintShiftTicket(tx.sessionId);
-                                  }
+                                  if (tx.sessionId) handlePrintShiftTicket(tx.sessionId);
                                 }}
                                 title="Imprimir Ticket Térmico"
                                 className="h-7 w-7 p-0 inline-flex items-center justify-center bg-subtle text-primary rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-all border border-base active:scale-95 cursor-pointer shadow-2xs"
@@ -2049,7 +1998,7 @@ export default function Reports() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-secondary p-3 rounded-2xl shadow-sm border border-base">
               <span className="text-[8px] font-black text-muted uppercase tracking-widest block">Total Nómina Liquidada</span>
-              <p className="text-base font-black text-indigo-600 dark:text-indigo-400 mt-0.5">
+              <p className="text-base font-black text-rose-600 dark:text-rose-400 mt-0.5">
                 {formatMoney(filteredPayrollList.reduce((sum, item) => sum + item.totalSalary, 0))}
               </p>
             </div>
@@ -2075,17 +2024,17 @@ export default function Reports() {
 
           {/* Liquidación por Turno Cerrado Table */}
           <div className="bg-secondary rounded-2xl shadow-sm border border-base overflow-hidden">
-            <div className="p-3.5 border-b border-base flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-indigo-50/20 dark:bg-indigo-950/20">
+            <div className="p-3.5 border-b border-base flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-rose-50/20 dark:bg-rose-950/20">
               <div>
                 <h3 className="text-xs font-black text-primary uppercase tracking-wider flex items-center gap-2">
-                  <Calculator className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <Calculator className="w-4 h-4 text-rose-600 dark:text-rose-400" />
                   Liquidación Diaria de Salarios por Turno Cerrado
                 </h3>
                 <p className="text-[8px] font-bold text-muted uppercase tracking-widest mt-0.5">
                   Fecha de salario, turno lineal consecutivo, ventas, comisiones y liquidación exacta
                 </p>
               </div>
-              <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+              <span className="text-[9px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-wider">
                 {filteredPayrollList.length} liquidaciones
               </span>
             </div>
@@ -2113,7 +2062,7 @@ export default function Reports() {
                       <tr key={`${item.sessionId || 'pay'}-${item.date || ''}-${idx}`} className="hover:bg-subtle transition-colors">
                         {/* Turno lineal */}
                         <td className="px-3 py-2 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/50 tracking-wider">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-100 dark:border-rose-900/50 tracking-wider">
                             {item.turnLabel}
                           </span>
                         </td>
@@ -2182,9 +2131,9 @@ export default function Reports() {
                             <button
                               onClick={() => setExpandedSession(item.sessionId)}
                               title="Ver Detalle del Turno y Liquidación"
-                              className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 text-[9px] font-black uppercase rounded-lg border border-indigo-200 dark:border-indigo-900/50 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                              className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 text-[9px] font-black uppercase rounded-lg border border-rose-200 dark:border-rose-900/50 transition-all active:scale-95 shadow-2xs cursor-pointer"
                             >
-                              <Eye className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                              <Eye className="w-3 h-3 text-rose-600 dark:text-rose-400" />
                               <span>Detalle</span>
                             </button>
                             <button
@@ -2216,7 +2165,7 @@ export default function Reports() {
           <div className="bg-secondary rounded-2xl shadow-sm border border-base overflow-hidden">
             <div className="p-3.5 border-b border-base bg-subtle/50">
               <h3 className="text-[11px] font-black text-primary uppercase tracking-wider flex items-center gap-2">
-                <User className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <User className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                 Resumen Acumulado por Trabajador
               </h3>
             </div>
@@ -2284,7 +2233,7 @@ export default function Reports() {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
             <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-              <Calculator className="w-3.5 h-3.5 text-indigo-600" />
+              <Calculator className="w-3.5 h-3.5 text-rose-600" />
               Historial de Aperturas y Cierres de Caja
             </h3>
             <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider">
@@ -2308,7 +2257,7 @@ export default function Reports() {
                 {filteredCashSessions.map((session, idx) => (
                   <tr key={`${session.id || 'cash'}-${session.openedAt || ''}-${idx}`} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-3 py-2 whitespace-nowrap">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-100 tracking-wider">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-100 tracking-wider">
                         {sessionTurnMap.get(session.id) || session.id}
                       </span>
                     </td>
@@ -2346,9 +2295,9 @@ export default function Reports() {
                             <button
                               onClick={() => setExpandedSession(session.id)}
                               title="Ver Detalle Completo del Turno"
-                              className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 text-[9px] font-black uppercase rounded-lg border border-indigo-200 dark:border-indigo-900/50 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                              className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 text-[9px] font-black uppercase rounded-lg border border-rose-200 dark:border-rose-900/50 transition-all active:scale-95 shadow-2xs cursor-pointer"
                             >
-                              <Eye className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                              <Eye className="w-3 h-3 text-rose-600 dark:text-rose-400" />
                               <span>Detalle</span>
                             </button>
                             <button
@@ -2460,7 +2409,7 @@ export default function Reports() {
                   className={cn(
                     "px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all cursor-pointer",
                     discrepancyTypeFilter === f.id
-                      ? "bg-indigo-600 text-white shadow-xs"
+                      ? "bg-rose-600 text-white shadow-xs"
                       : "bg-subtle text-secondary hover:text-primary"
                   )}
                 >
@@ -2500,7 +2449,7 @@ export default function Reports() {
                       <tr key={session.id} className="hover:bg-subtle/50 transition-colors">
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           <div className="flex flex-col gap-1">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/50 tracking-wider w-fit">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-100 dark:border-rose-900/50 tracking-wider w-fit">
                               {turnLabel}
                             </span>
                             {info.isForcedClose ? (
@@ -2609,9 +2558,9 @@ export default function Reports() {
                                 setEditingAuditStatus(info.auditStatus || 'pending_review');
                               }}
                               title="Ver Detalle de Auditoría de Descuadre"
-                              className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 text-[9px] font-black uppercase rounded-lg border border-indigo-200 dark:border-indigo-900/50 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                              className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 text-[9px] font-black uppercase rounded-lg border border-rose-200 dark:border-rose-900/50 transition-all active:scale-95 shadow-2xs cursor-pointer"
                             >
-                              <Eye className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                              <Eye className="w-3 h-3 text-rose-600 dark:text-rose-400" />
                               <span>Auditoría</span>
                             </button>
                             <button
@@ -2673,7 +2622,7 @@ export default function Reports() {
             </div>
 
             <div className="bg-secondary p-3.5 rounded-2xl shadow-xs border border-base flex items-start gap-3">
-              <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+              <div className="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/50 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
                 <ArrowLeftRight className="w-4 h-4" />
               </div>
               <div className="min-w-0 flex-1">
@@ -2719,7 +2668,7 @@ export default function Reports() {
                   className={cn(
                     "px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all cursor-pointer",
                     movementTypeFilter === f.id
-                      ? "bg-indigo-600 text-white shadow-xs"
+                      ? "bg-rose-600 text-white shadow-xs"
                       : "bg-subtle text-secondary hover:text-primary"
                   )}
                 >
@@ -2781,7 +2730,7 @@ export default function Reports() {
                         </td>
 
                         <td className="px-3 py-2.5 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/50 tracking-wider">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-100 dark:border-rose-900/50 tracking-wider">
                             {m.turnLabel}
                           </span>
                         </td>
@@ -2837,9 +2786,9 @@ export default function Reports() {
                             <button
                               onClick={() => setSelectedMovementDetail(m)}
                               title="Ver Detalle del Movimiento"
-                              className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 text-[9px] font-black uppercase rounded-lg border border-indigo-200 dark:border-indigo-900/50 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                              className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 text-[9px] font-black uppercase rounded-lg border border-rose-200 dark:border-rose-900/50 transition-all active:scale-95 shadow-2xs cursor-pointer"
                             >
-                              <Eye className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                              <Eye className="w-3 h-3 text-rose-600 dark:text-rose-400" />
                               <span>Detalle</span>
                             </button>
                             <button
@@ -2886,12 +2835,12 @@ export default function Reports() {
             </div>
 
             <div className="bg-secondary p-3.5 rounded-2xl shadow-xs border border-base flex items-start gap-3">
-              <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+              <div className="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/50 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
                 <Package className="w-4 h-4" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-[8px] font-black text-muted uppercase tracking-widest truncate">Unidades Movidas</p>
-                <p className="text-base font-black text-indigo-600 dark:text-indigo-400 mt-0.5">{transferStats.totalUnits} u.</p>
+                <p className="text-base font-black text-rose-600 dark:text-rose-400 mt-0.5">{transferStats.totalUnits} u.</p>
                 <p className="text-[7px] font-bold text-muted uppercase">Artículos transferidos</p>
               </div>
             </div>
@@ -2959,7 +2908,7 @@ export default function Reports() {
                   placeholder="Buscar producto..."
                   value={transferSearch}
                   onChange={(e) => setTransferSearch(e.target.value)}
-                  className="w-full pl-2.5 pr-2 py-1 bg-subtle border border-base rounded-lg text-[8px] font-bold text-primary placeholder:text-muted outline-none focus:border-indigo-500"
+                  className="w-full pl-2.5 pr-2 py-1 bg-subtle border border-base rounded-lg text-[8px] font-bold text-primary placeholder:text-muted outline-none focus:border-rose-500"
                 />
               </div>
             </div>
@@ -3032,7 +2981,7 @@ export default function Reports() {
                         </td>
 
                         <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900/50">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-100 dark:border-rose-900/50">
                             {t.quantity} uds
                           </span>
                         </td>
@@ -3047,9 +2996,9 @@ export default function Reports() {
                           <button
                             onClick={() => setSelectedTransferModal(t)}
                             title="Ver Detalle de Transferencia"
-                            className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 text-[9px] font-black uppercase rounded-lg border border-indigo-200 dark:border-indigo-900/50 transition-all mx-auto active:scale-95 shadow-2xs cursor-pointer"
+                            className="h-7 px-2.5 inline-flex items-center justify-center gap-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 text-[9px] font-black uppercase rounded-lg border border-rose-200 dark:border-rose-900/50 transition-all mx-auto active:scale-95 shadow-2xs cursor-pointer"
                           >
-                            <Eye className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                            <Eye className="w-3 h-3 text-rose-600 dark:text-rose-400" />
                             <span>Detalle</span>
                           </button>
                         </td>
@@ -3075,13 +3024,13 @@ export default function Reports() {
       {selectedDirectTxModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 border border-base my-auto text-primary">
-            <div className="bg-indigo-600 p-5 text-white flex items-center justify-between">
+            <div className="bg-rose-600 p-5 text-white flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-white/10 rounded-2xl backdrop-blur-md">
                   <TrendingUp className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <span className="text-[9px] font-black uppercase tracking-widest text-indigo-200 block">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-rose-200 block">
                     Comprobante de Venta POS
                   </span>
                   <h3 className="text-base font-black text-white uppercase tracking-tight">
@@ -3126,7 +3075,7 @@ export default function Reports() {
                   <span className="text-[9px] font-black text-muted uppercase tracking-wider">
                     Productos del Ticket
                   </span>
-                  <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-900">
+                  <span className="text-[9px] font-black text-rose-600 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded-md border border-rose-100 dark:border-rose-900">
                     {(selectedDirectTxModal.items || []).reduce((sum, i) => sum + i.quantity, 0)} unidades
                   </span>
                 </div>
@@ -3182,16 +3131,16 @@ export default function Reports() {
               </div>
 
               {/* Total Banner */}
-              <div className="p-4 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-2xl border border-indigo-100 dark:border-indigo-900/40 flex items-center justify-between">
+              <div className="p-4 bg-rose-50/50 dark:bg-rose-950/30 rounded-2xl border border-rose-100 dark:border-rose-900/40 flex items-center justify-between">
                 <div>
-                  <span className="text-[8px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 block">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400 block">
                     Total Facturado
                   </span>
                   <span className="text-xs font-bold text-muted">
                     {(selectedDirectTxModal.items || []).length} productos diferentes
                   </span>
                 </div>
-                <span className="text-lg font-black text-indigo-700 dark:text-indigo-300">
+                <span className="text-lg font-black text-rose-700 dark:text-rose-300">
                   {formatMoney(selectedDirectTxModal.total)}
                 </span>
               </div>
@@ -3204,7 +3153,7 @@ export default function Reports() {
                       handlePrintShiftTicket(selectedDirectTxModal.sessionId);
                     }
                   }}
-                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
                 >
                   <Printer className="w-4 h-4" />
                   Imprimir
@@ -3240,7 +3189,7 @@ export default function Reports() {
       {selectedTransferModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 border border-base my-auto text-primary">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-5 text-white flex items-center justify-between">
+            <div className="bg-gradient-to-r from-blue-600 to-rose-600 p-5 text-white flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-white/10 rounded-2xl backdrop-blur-md">
                   <ArrowLeftRight className="w-6 h-6 text-white" />
@@ -3290,7 +3239,7 @@ export default function Reports() {
                   <span className="text-[8px] font-black text-muted uppercase tracking-wider block mb-0.5">
                     Cantidad Transferida
                   </span>
-                  <p className="text-sm font-black text-indigo-600 dark:text-indigo-400">
+                  <p className="text-sm font-black text-rose-600 dark:text-rose-400">
                     {selectedTransferModal.quantity} unidades
                   </p>
                 </div>
@@ -3319,7 +3268,7 @@ export default function Reports() {
                     {selectedTransferModal.variants.map((v, vIdx) => (
                       <div key={vIdx} className="p-2.5 flex items-center justify-between text-xs">
                         <span className="font-bold text-primary">{v.variantLabel || 'Variante'}</span>
-                        <span className="font-black text-indigo-600 dark:text-indigo-400">{v.quantity} uds</span>
+                        <span className="font-black text-rose-600 dark:text-rose-400">{v.quantity} uds</span>
                       </div>
                     ))}
                   </div>
@@ -3376,13 +3325,13 @@ export default function Reports() {
 
               return (
                 <>
-                  <div className="p-4 sm:p-5 border-b border-base flex items-center justify-between bg-indigo-50/40 dark:bg-indigo-950/30 shrink-0">
+                  <div className="p-4 sm:p-5 border-b border-base flex items-center justify-between bg-rose-50/40 dark:bg-rose-950/30 shrink-0">
                     <div>
                       <div className="text-sm font-black text-primary uppercase tracking-tight">
                         {dateToDisplay.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300 uppercase bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-900">
+                        <span className="text-[10px] font-black text-rose-700 dark:text-rose-300 uppercase bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-900">
                           {sequentialTurn}
                         </span>
                         <span className="text-[9px] font-bold text-muted uppercase">
@@ -3491,7 +3440,7 @@ export default function Reports() {
                             setManualItemCurrencyCode('CUP');
                             setAddItemToShiftModal(session);
                           }}
-                          className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all border border-indigo-200 dark:border-indigo-900/50 flex items-center gap-1 active:scale-95 cursor-pointer shadow-2xs"
+                          className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all border border-rose-200 dark:border-rose-900/50 flex items-center gap-1 active:scale-95 cursor-pointer shadow-2xs"
                           title="Permite registrar productos vendidos en este turno sin alterar el stock físico de inventario"
                         >
                           <Plus className="w-3 h-3" />
@@ -3502,7 +3451,7 @@ export default function Reports() {
                         {Object.values(groupedItems).map((item, idx) => (
                           <div key={idx} className="flex items-center justify-between p-2.5 bg-subtle rounded-xl border border-base">
                             <div className="flex items-center gap-2 min-w-0">
-                              <div className="w-6 h-6 bg-secondary rounded-lg flex items-center justify-center text-[9px] font-black text-indigo-600 dark:text-indigo-400 border border-base shrink-0">
+                              <div className="w-6 h-6 bg-secondary rounded-lg flex items-center justify-center text-[9px] font-black text-rose-600 dark:text-rose-400 border border-base shrink-0">
                                 {item.quantity}
                               </div>
                               <span className="text-[9px] font-black text-primary uppercase tracking-tight truncate">{item.name}</span>
@@ -3547,7 +3496,7 @@ export default function Reports() {
                   <div className="p-4 sm:p-5 bg-subtle border-t border-base shrink-0 flex items-center justify-between">
                     <div>
                       <span className="text-[8px] font-black text-muted uppercase tracking-widest block">Total Ventas Turno</span>
-                      <span className="text-base font-black text-indigo-600 dark:text-indigo-400">{formatMoney(totalSalesInSession)}</span>
+                      <span className="text-base font-black text-rose-600 dark:text-rose-400">{formatMoney(totalSalesInSession)}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       {session.status === 'open' && (
@@ -3578,7 +3527,7 @@ export default function Reports() {
                       </button>
                       <button
                         onClick={() => handlePrintShiftTicket(session.id)}
-                        className="px-3.5 py-2 bg-indigo-600 text-white rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-indigo-700 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
+                        className="px-3.5 py-2 bg-rose-600 text-white rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-rose-700 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
                       >
                         <Printer className="w-4 h-4" />
                         Imprimir Ticket
@@ -3619,19 +3568,19 @@ export default function Reports() {
               return (
                 <>
                   {/* Header */}
-                  <div className="p-4 sm:p-5 border-b border-base flex items-center justify-between bg-indigo-50/40 dark:bg-indigo-950/30 shrink-0">
+                  <div className="p-4 sm:p-5 border-b border-base flex items-center justify-between bg-rose-50/40 dark:bg-rose-950/30 shrink-0">
                     <div className="flex items-center gap-2.5">
                       <div className={cn(
                         "p-2.5 rounded-2xl shrink-0 flex items-center justify-center",
                         info?.isForcedClose
                           ? "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
-                          : "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
+                          : "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
                       )}>
                         {info?.isForcedClose ? <AlertTriangle className="w-5 h-5" /> : <ShieldAlert className="w-5 h-5" />}
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300 uppercase bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-900">
+                          <span className="text-[10px] font-black text-rose-700 dark:text-rose-300 uppercase bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-900">
                             {sequentialTurn}
                           </span>
                           {info?.isForcedClose ? (
@@ -3678,7 +3627,7 @@ export default function Reports() {
                       </div>
                       <div className="bg-subtle p-2.5 rounded-xl border border-base">
                         <span className="text-muted font-black uppercase block text-[7px]">Ventas Totales</span>
-                        <p className="font-black text-indigo-600 dark:text-indigo-400 mt-0.5">{formatMoney(totalSalesInSession, baseCurrency.code)}</p>
+                        <p className="font-black text-rose-600 dark:text-rose-400 mt-0.5">{formatMoney(totalSalesInSession, baseCurrency.code)}</p>
                       </div>
                     </div>
 
@@ -3828,7 +3777,7 @@ export default function Reports() {
                     <div className="p-3.5 rounded-2xl bg-subtle border border-base space-y-3">
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2">
-                          <ListChecks className="w-4 h-4 text-indigo-600" />
+                          <ListChecks className="w-4 h-4 text-rose-600" />
                           <div>
                             <span className="text-[9px] font-black uppercase text-primary tracking-wider block">
                               Revisión del descuadre
@@ -3857,7 +3806,7 @@ export default function Reports() {
                           onChange={(e) => setEditingAuditNotes(e.target.value)}
                           placeholder="Escriba las conclusiones de la auditoría, justificación del descuadre o acuerdos tomados con el cajero..."
                           rows={3}
-                          className="w-full bg-secondary border border-base rounded-xl p-2.5 text-xs text-primary placeholder:text-muted focus:border-indigo-500 outline-none resize-none transition-colors"
+                          className="w-full bg-secondary border border-base rounded-xl p-2.5 text-xs text-primary placeholder:text-muted focus:border-rose-500 outline-none resize-none transition-colors"
                         />
                       </div>
 
@@ -3955,7 +3904,7 @@ export default function Reports() {
                             });
                             if (addNotification) addNotification("Notas y estado de auditoría guardados", "success");
                           }}
-                          className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                          className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
                         >
                           <Save className="w-3.5 h-3.5" />
                           <span>Guardar Auditoría</span>
@@ -4247,7 +4196,7 @@ export default function Reports() {
                                 <span className="font-bold text-primary">#{t.id}</span>
                                 <span className="text-muted ml-1 font-mono">{new Date(t.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                               </div>
-                              <span className="font-black text-indigo-600 dark:text-indigo-400">{formatMoney(t.total)}</span>
+                              <span className="font-black text-rose-600 dark:text-rose-400">{formatMoney(t.total)}</span>
                             </div>
                           ))}
                           {sessionTx.length === 0 && (
@@ -4290,7 +4239,7 @@ export default function Reports() {
                       <button
                         type="button"
                         onClick={() => handlePrintDiscrepancyTicket(session)}
-                        className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 rounded-xl text-[9px] font-black uppercase tracking-wider border border-indigo-200 dark:border-indigo-800 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+                        className="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-700 dark:text-rose-300 rounded-xl text-[9px] font-black uppercase tracking-wider border border-rose-200 dark:border-rose-800 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
                       >
                         <Printer className="w-3.5 h-3.5" />
                         <span>Imprimir Comprobante Descuadre</span>
@@ -4382,7 +4331,7 @@ export default function Reports() {
                     <div className="grid grid-cols-2 gap-2 text-[9px]">
                       <div className="bg-subtle p-2.5 rounded-xl border border-base">
                         <span className="text-muted font-black uppercase block text-[7px]">Turno</span>
-                        <p className="font-black text-indigo-600 dark:text-indigo-400 mt-0.5">{m.turnLabel}</p>
+                        <p className="font-black text-rose-600 dark:text-rose-400 mt-0.5">{m.turnLabel}</p>
                       </div>
                       <div className="bg-subtle p-2.5 rounded-xl border border-base">
                         <span className="text-muted font-black uppercase block text-[7px]">Sucursal</span>
@@ -4412,7 +4361,7 @@ export default function Reports() {
                     <button
                       type="button"
                       onClick={() => handlePrintCashMovementTicket(m)}
-                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                      className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
                     >
                       <Printer className="w-3.5 h-3.5" />
                       <span>Imprimir Vale Térmico (58mm)</span>
@@ -4597,7 +4546,7 @@ export default function Reports() {
                   );
                   const totalSales = sessionTxs.reduce((sum, tx) => sum + (tx.total || 0), 0);
                   return (
-                    <div className="flex justify-between border-t border-base/60 pt-2 font-black text-indigo-600 dark:text-indigo-400">
+                    <div className="flex justify-between border-t border-base/60 pt-2 font-black text-rose-600 dark:text-rose-400">
                       <span>Ventas Acumuladas:</span>
                       <span>{formatMoney(totalSales)}</span>
                     </div>
