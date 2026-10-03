@@ -4,7 +4,7 @@ import { normalizeSemanticText } from '../../utils/textUtils';
 import { 
   Product, Category, Branch, InventoryLevel, User, 
   BankCard, Customer, Currency, Transaction, CashRegisterSession,
-  Warranty, ReturnItem, InventoryTransfer, IDNSettlementPrice,
+  Warranty, ReturnItem, InventoryTransfer,
   TimeShift, Quote, BankTransaction, SupplierOrder, InventoryAudit, SalarySettlement, Supplier,
   ReceiptConfig, StoreConfig
 } from '../../types';
@@ -587,7 +587,6 @@ export async function clearSupabaseData(confirmToken?: string): Promise<{ succes
     'inventory',
     'transactions',
     'cash_sessions',
-    'idn_settlement_prices',
     'inventory_transfers',
     'inventory_audits',
     'supplier_orders',
@@ -645,7 +644,6 @@ export async function clearSelectedDataFromSupabase(sections: ResetSection[]): P
   const groups: Record<ResetSection, string[]> = {
     inventory: ['inventory_movements', 'inventory_transfers', 'inventory'],
     reports: ['transactions', 'cash_sessions', 'cash_movements', 'bank_transactions', 'inventory_audits', 'salary_settlements', 'returns', 'warranties'],
-    catalog: ['idn_settlement_prices', 'products', 'categories'],
     customers: ['customers'],
     suppliers: ['supplier_orders', 'suppliers'],
     purchases: ['supplier_orders'],
@@ -734,8 +732,7 @@ export async function pushUserToSupabase(user: User) {
       allowed_branches: user.allowedBranches || [],
       permissions: user.permissions || [],
       is_active: user.isActive !== false,
-      is_independent: user.isIndependent === true,
-      assigned_branch_id: user.assignedBranchId || user.branchId || null
+
     };
 
     const { error } = await safeUpsert(supabase, 'users', row);
@@ -745,54 +742,6 @@ export async function pushUserToSupabase(user: User) {
   } catch (e) {
     enqueueOfflineItem('user', user, user.id);
     console.warn("Supabase push user failed:", e);
-  }
-}
-
-export async function pushIDNSettlementPriceToSupabase(price: IDNSettlementPrice) {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    enqueueOfflineItem('idn_settlement_price', price, price.id);
-    return;
-  }
-  const supabase = getSupabase();
-  if (!supabase) {
-    enqueueOfflineItem('idn_settlement_price', price, price.id);
-    return;
-  }
-
-  try {
-    const row = {
-      id: price.id,
-      user_id: price.userId,
-      product_id: price.productId,
-      settlement_price: price.settlementPrice
-    };
-
-    const result = await safeUpsert(supabase, 'idn_settlement_prices', row);
-    if (result?.error) throw result.error;
-  } catch (e) {
-    enqueueOfflineItem('idn_settlement_price', price, price.id);
-    console.warn("Supabase push settlement price failed:", e);
-  }
-}
-
-export async function deleteIDNSettlementPriceFromSupabase(id: string): Promise<boolean> {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    await enqueueOfflineItem('idn_settlement_price_delete', { id }, id);
-    return false;
-  }
-  const supabase = getSupabase();
-  if (!supabase) {
-    await enqueueOfflineItem('idn_settlement_price_delete', { id }, id);
-    return false;
-  }
-  try {
-    const { error } = await supabase.from('idn_settlement_prices').delete().eq('id', id);
-    if (error) throw error;
-    return true;
-  } catch (e) {
-    console.warn("Supabase delete settlement price failed, guardando operación durable:", e);
-    await enqueueOfflineItem('idn_settlement_price_delete', { id }, id);
-    return false;
   }
 }
 
