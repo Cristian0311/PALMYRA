@@ -1834,11 +1834,9 @@ export default function POS() {
       // y se autentica con la contraseña de ESE trabajador.
       // La sucursal queda limitada a las sucursales asignadas al trabajador seleccionado.
       const workerBranchIds = new Set(
-        workerToAssign.branchId
-          ? [workerToAssign.branchId]
-          : workerToAssign.branchId
-            ? [workerToAssign.branchId]
-            : (workerToAssign.allowedBranches || [])
+        workerToAssign.allowedBranches?.length
+          ? workerToAssign.allowedBranches
+          : (workerToAssign.branchId ? [workerToAssign.branchId] : [])
       );
       const permittedBranchIds = currentUser?.role === 'admin'
         ? new Set((branches || []).map(b => b.id))
