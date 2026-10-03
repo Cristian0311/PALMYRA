@@ -80,28 +80,6 @@ export function useReportsAnalytics(params: {
     return Object.entries(data).map(([name, total]) => ({ name, total }));
   }, [transactions, branches, branchById]);
 
-  const idnTransactions = useMemo(() => {
-    const todayYMD = getLocalDateYMD(new Date().toISOString());
-    const yesterdayDate = new Date();
-    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-    const yesterdayYMD = getLocalDateYMD(yesterdayDate.toISOString());
-
-    return transactions.filter(t => {
-      if (t.deletedAt) return false;
-      if (selectedBranchFilter !== 'all' && t.branchId !== selectedBranchFilter) return false;
-      const tYMD = getLocalDateYMD(t.date);
-      if (selectedFilterDate) {
-        if (tYMD !== selectedFilterDate) return false;
-      } else if (sessionFilter === 'today') {
-        if (tYMD !== todayYMD) return false;
-      } else if (sessionFilter === 'yesterday') {
-        if (tYMD !== yesterdayYMD) return false;
-      }
-      const user = userById.get(t.userId);
-      return t.id.startsWith('LIQ-IDN-') || t.notes === 'LIQUIDACION_IDN' || (t.notes && t.notes.includes('IDN')) || user?.isIndependent === true;
-    });
-  }, [transactions, selectedBranchFilter, selectedFilterDate, sessionFilter, userById]);
-
   const filteredTransfers = useMemo(() => {
     const todayYMD = getLocalDateYMD(new Date().toISOString());
     const yesterdayDate = new Date();
@@ -183,73 +161,10 @@ export function useReportsAnalytics(params: {
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, selectedBranchFilter, selectedWorkerFilter, selectedFilterDate, sessionFilter, userById, users]);
 
-  const idnWorkerStats = useMemo(() => {
-    const map = new Map<string, {
-      userId: string;
-      workerName: string;
-      branchName: string;
-      liquidationsCount: number;
-      unitsSold: number;
-      totalSettled: number;
-      estimatedPublic: number;
-      companyProfit: number;
-    }>();
-
-    idnTransactions.forEach(tx => {
-      const worker = userById.get(tx.userId);
-      const name = tx.cashierName || worker?.name || 'Vendedor IDN';
-      const branchName = branchById.get(tx.branchId)?.name || 'Almacén Asignado';
-
-      if (!map.has(name)) {
-        map.set(name, {
-          userId: tx.userId,
-          workerName: name,
-          branchName,
-          liquidationsCount: 0,
-          unitsSold: 0,
-          totalSettled: 0,
-          estimatedPublic: 0,
-          companyProfit: 0
-        });
-      }
-
-      const itemStats = (tx.items || []).reduce((acc, item) => {
-        const prodId = typeof item.product === 'string' ? item.product : item.product?.id;
-        const prod = prodId ? productById.get(prodId) : undefined;
-        const qty = item.quantity || 0;
-        const settlementPrice = item.price || 0;
-        const publicPrice = prod?.price || item.product?.price || settlementPrice;
-        const costPrice = prod?.costPrice || item.product?.costPrice || 0;
-        acc.qty += qty;
-        acc.publicVal += publicPrice * qty;
-        acc.costVal += costPrice * qty;
-        return acc;
-      }, { qty: 0, publicVal: 0, costVal: 0 });
-
-      const entry = map.get(name)!;
-      entry.liquidationsCount += 1;
-      entry.unitsSold += itemStats.qty;
-      entry.totalSettled += tx.total || 0;
-      entry.estimatedPublic += itemStats.publicVal;
-      entry.companyProfit += (tx.total || 0) - itemStats.costVal;
-    });
-
-    return Array.from(map.values());
-  }, [idnTransactions, userById, branchById, productById]);
-
-  const idnTotals = useMemo(() => {
-    return idnWorkerStats.reduce((acc, curr) => {
-      acc.totalSettled += curr.totalSettled;
-      acc.estimatedPublic += curr.estimatedPublic;
-      acc.unitsSold += curr.unitsSold;
-      acc.companyProfit += curr.companyProfit;
-      return acc;
-    }, { totalSettled: 0, estimatedPublic: 0, unitsSold: 0, companyProfit: 0 });
-  }, [idnWorkerStats]);
-
   return {
     categoryData, hourData, branchData,
-    idnTransactions, filteredTransfers, transferStats,
-    filteredTransactions, idnWorkerStats, idnTotals
+  filteredTransfers, transferStats,
+    filteredTransactions,
+  idnTotals
   };
 }
