@@ -117,7 +117,7 @@ export function initMultiDeviceRealtimeSync(): () => void {
       }, 700);
       return;
     }
-    const globalCatalog = new Set(['branches','categories','products','users','currencies','idn_settlement_prices','settings']);
+    const globalCatalog = new Set(['branches','categories','products','users','currencies','settings']);
     if (globalCatalog.has(table)) {
       if (debounceTimeout) clearTimeout(debounceTimeout);
       debounceTimeout = setTimeout(() => {
