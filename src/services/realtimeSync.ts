@@ -1,5 +1,5 @@
 import { getSupabase } from '../lib/supabase';
-import { getStoreTenant } from '../store/useStore';
+import { useStore } from '../store/useStore';
 import { getOfflineQueueCount } from './offlineQueue';
 
 let realtimeChannel:any=null;
@@ -24,6 +24,12 @@ const OP_TABLES=new Set([
   'payroll_runs','payroll_items'
 ]);
 
+async async function getTenantState(){
+  const { getActiveTenant } = await import('./tenant');
+  const tenant = await getActiveTenant();
+  return { companyId: tenant.companyId, branchId: useStore.getState().currentBranchId, bootstrapPosFromSupabase: async()=>{ const {pullPosBootstrapFromSupabase}=await import('./supabaseSync'); const r=await pullPosBootstrapFromSupabase(useStore.getState().currentBranchId); if(r.success){useStore.setState(r.data);return true;} return false; }, refreshBranchOperationalData:()=>useStore.getState().refreshBranchOperationalData(), refreshGlobalCatalogData:()=>useStore.getState().refreshGlobalCatalogData() };
+}
+
 async function refresh(force=false){
   if(typeof navigator!=='undefined'&&!navigator.onLine)return;
   if(isSyncInProgress)return;
@@ -32,7 +38,7 @@ async function refresh(force=false){
     try{const {processOfflineQueue}=await import('./offlineSync');await processOfflineQueue();}catch(e){console.warn('[PALMYRA] offline replay failed',e);}finally{isSyncInProgress=false;}
     return;
   }
-  const state=getStoreTenant();
+  const state=await getTenantState();
   const key=state.companyId+'|'+state.branchId;
   if(force||key!==bootstrappedTenantKey){
     const ok=await state.bootstrapPosFromSupabase();
@@ -51,7 +57,7 @@ function schedule(kind:'operational'|'global'|'all'='operational',delay=500){
     if(kind==='global'&&now-lastGlobalRefreshAt<GLOBAL_MS)return;
     if(kind==='operational')lastOperationalRefreshAt=now;else if(kind==='global')lastGlobalRefreshAt=now;
     if(kind==='all'){lastOperationalRefreshAt=now;lastGlobalRefreshAt=now;}
-    const state=getStoreTenant();
+    const state=await getTenantState();
     if(getOfflineQueueCount()>0){await refresh(false);return;}
     try{
       if(kind==='global')await state.refreshGlobalCatalogData();
@@ -72,7 +78,7 @@ export function initMultiDeviceRealtimeSync():()=>void{
 
   const subscribe=()=>{
     if(realtimeChannel)return;
-    const state=getStoreTenant();
+    const state=await getTenantState();
     const tenant=state.companyId;
     const channel=supabase.channel('palmyra-tenant-'+(tenant||'anon'));
     for(const table of [...GLOBAL_TABLES,...OP_TABLES]){
