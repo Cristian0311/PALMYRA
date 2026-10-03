@@ -206,14 +206,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               n.type === 'success' ? "bg-emerald-50 border-emerald-100 text-emerald-800" :
               n.type === 'error' ? "bg-rose-50 border-rose-100 text-rose-800" :
               n.type === 'warning' ? "bg-amber-50 border-amber-100 text-amber-800" :
-              "bg-indigo-50 border-indigo-100 text-indigo-800"
+              "bg-indigo-50 border-rose-100 text-rose-800"
             )}
           >
             <div className="shrink-0">
               {n.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
               {n.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-500" />}
               {n.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-500" />}
-              {n.type === 'info' && <Info className="w-5 h-5 text-indigo-500" />}
+              {n.type === 'info' && <Info className="w-5 h-5 text-rose-500" />}
             </div>
             <button
               type="button"
@@ -239,8 +239,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </div>
       {/* Mobile Top Bar (Only when not on POS or if POS wants it) */}
       {!isPosPage && (
-        <div className="md:hidden bg-indigo-600 text-white p-3.5 flex justify-between items-center shadow-md shrink-0">
-          <h1 className="text-lg font-bold tracking-tight">MARÉ POS</h1>
+        <div className="md:hidden bg-rose-600 text-white p-3.5 flex justify-between items-center shadow-md shrink-0">
+          <h1 className="text-lg font-bold tracking-tight">PALMYRA POS</h1>
           <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-1">
             <Menu className="w-5 h-5" />
           </button>
@@ -262,7 +262,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className={cn("p-4 shrink-0 flex items-center justify-between border-b border-subtle", sidebarCollapsed && "md:p-3 md:justify-center")}>
           <div className={cn("flex flex-col min-w-0", sidebarCollapsed && "md:hidden")}>
             <h1 className="text-lg font-black tracking-tight text-primary uppercase truncate">
-              MARÉ<span className="text-indigo-600"> POS</span>
+              PALMYRA<span className="text-rose-600"> POS</span>
             </h1>
             <p className="text-[7px] text-muted uppercase tracking-[0.2em] font-black">Enterprise CRM</p>
           </div>
@@ -295,10 +295,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     "flex items-center rounded-xl transition-all duration-150 group",
                     sidebarCollapsed ? "justify-center p-2.5 my-1" : "space-x-3 px-3.5 py-2.5",
                     isActive
-                      ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                      ? "bg-rose-600 text-white shadow-md shadow-rose-600/20"
                       : "text-muted hover:bg-subtle hover:text-primary"
                   )}>
-                    <Icon className={cn("w-4 h-4 shrink-0 transition-colors", isActive ? "text-white" : "text-muted group-hover:text-indigo-600")} />
+                    <Icon className={cn("w-4 h-4 shrink-0 transition-colors", isActive ? "text-white" : "text-muted group-hover:text-rose-600")} />
                     {!sidebarCollapsed && (
                       <span className="font-black text-[9px] uppercase tracking-wider truncate">{item.name}</span>
                     )}
@@ -320,14 +320,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 !isOnline
                   ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
                   : pendingOfflineCount > 0
-                  ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20 hover:bg-indigo-500/20 cursor-pointer"
+                  ? "bg-rose-500/10 text-rose-600 dark:text-indigo-400 border-indigo-500/20 hover:bg-rose-500/20 cursor-pointer"
                   : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
               )}
               title={pendingOfflineCount > 0 ? "Clic para sincronizar datos pendientes con Supabase" : undefined}
             >
               <div className="flex items-center gap-1.5 truncate">
                 {isSyncingOffline ? (
-                  <RefreshCw className="w-3 h-3 animate-spin shrink-0 text-indigo-500" />
+                  <RefreshCw className="w-3 h-3 animate-spin shrink-0 text-rose-500" />
                 ) : isOnline ? (
                   <Wifi className="w-3 h-3 shrink-0" />
                 ) : (
