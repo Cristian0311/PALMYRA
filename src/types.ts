@@ -248,16 +248,8 @@ export interface User {
   allowedBranches?: string[]; // Sucursales donde el usuario puede operar
   permissions?: string[];
   isActive?: boolean;
-  isIndependent?: boolean; // Vendedor independiente (paga costo fijo, no recibe salario/comisión)
-  assignedBranchId?: string; // Almacén exclusivo asignado para IDN
 }
 
-export interface IDNSettlementPrice {
-  id: string;
-  userId: string;
-  productId: string;
-  settlementPrice: number;
-}
 
 export interface PendingOrder {
   id: string; // e.g. QR code
