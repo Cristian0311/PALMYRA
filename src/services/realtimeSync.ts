@@ -20,7 +20,7 @@ const MIN_OPERATIONAL_REFRESH_MS = 5000;
 const MIN_GLOBAL_REFRESH_MS = 15000;
 let bootstrappedBranchId: string | null = null;
 const BRANCH_SCOPED_TABLES = new Set(['inventory','transactions','cash_sessions','supplier_orders','inventory_audits']);
-const REMOTE_SYNC_TABLES = ['settings','cash_movements','currencies','branches','categories','products','users','inventory','customers','cash_sessions','transactions','idn_settlement_prices','inventory_transfers','warranties','returns','quotes','time_shifts','bank_cards','bank_transactions','suppliers','supplier_orders','inventory_audits','salary_settlements','inventory_movements','inventory_audit_items'];
+const REMOTE_SYNC_TABLES = ['settings','cash_movements','currencies','branches','categories','products','users','inventory','customers','cash_sessions','transactions','inventory_transfers','warranties','returns','quotes','time_shifts','bank_cards','bank_transactions','suppliers','supplier_orders','inventory_audits','salary_settlements','inventory_movements','inventory_audit_items'];
 
 async function reconcileRemoteState(forceBootstrap = false): Promise<void> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
