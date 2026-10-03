@@ -3254,8 +3254,6 @@ export const useStore = create<AppState>()(
         const pendingCategoryIds = new Set(queue.filter(i => i.type === 'category').map(i => i.data?.id).filter(Boolean));
         const pendingCategoryDeleteIds = new Set(queue.filter(i => i.type === 'category_delete').map(i => i.data?.id).filter(Boolean));
         const pendingBranchDeleteIds = new Set(queue.filter(i => i.type === 'branch_delete').map(i => i.data?.id).filter(Boolean));
-        const pendingIdnIds = new Set(queue.filter(i => i.type === 'idn_settlement_price').map(i => i.data?.id).filter(Boolean));
-        const pendingIdnDeleteIds = new Set(queue.filter(i => i.type === 'idn_settlement_price_delete').map(i => i.data?.id).filter(Boolean));
         const pendingUserIds = new Set(queue.filter(i => i.type === 'user').map(i => i.data?.id).filter(Boolean));
         const pendingCurrencyCodes = new Set(queue.filter(i => i.type === 'currency').map(i => i.data?.code).filter(Boolean));
         const validProductIds = new Set((d.products || []).map((p: any) => p.id));
@@ -3757,7 +3755,6 @@ export const useStore = create<AppState>()(
           const mergedQuotes = replaceRemoteRecords(data.quotes, state.quotes || [], new Set(getOfflineQueue().filter(i => i.type === 'quote').map(i => String(i.data?.id || i.actionId))));
           const mergedTimeShifts = replaceRemoteRecords(data.timeShifts, state.timeShifts || [], new Set(getOfflineQueue().filter(i => i.type === 'time_shift').map(i => String(i.data?.id || i.actionId))));
           const mergedSalarySettlements = replaceRemoteRecords(data.salarySettlements, state.salarySettlements || [], new Set(getOfflineQueue().filter(i => i.type === 'salary_settlement').map(i => String(i.data?.id || i.actionId))));
-          const deletedIdnSettlementIds = new Set(getOfflineQueue().filter(i => i.type === 'idn_settlement_price_delete').map(i => String(i.data?.id || i.actionId)));
 
           const updatedCurrentUser = state.currentUser
             ? (finalUsers.find((u: any) => u.id === state.currentUser?.id) || state.currentUser)
