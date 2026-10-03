@@ -16,9 +16,9 @@ export default defineConfig(() => {
         },
         manifest: {
           id: '/',
-          name: 'MARÉ POS - Sistema de Gestión',
-          short_name: 'MARÉ POS',
-          description: 'Punto de Venta Offline-First',
+          name: 'PALMYRA POS - Gestión empresarial',
+          short_name: 'PALMYRA POS',
+          description: 'Punto de venta empresarial',
           start_url: '/',
           scope: '/',
           display: 'standalone',
@@ -67,7 +67,7 @@ export default defineConfig(() => {
               urlPattern: /\/assets\/.*\.js$/i,
               handler: 'CacheFirst',
               options: {
-                cacheName: 'omnisync-js-runtime-cache',
+                cacheName: 'palmyra-js-runtime-cache',
                 expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 30 }
               }
             }
