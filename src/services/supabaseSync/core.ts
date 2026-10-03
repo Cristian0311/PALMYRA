@@ -5,7 +5,7 @@ import { normalizeSemanticText } from '../../utils/textUtils';
 import { 
   Product, Category, Branch, InventoryLevel, User, 
   BankCard, Customer, Currency, Transaction, CashRegisterSession,
-  Warranty, ReturnItem, InventoryTransfer, IDNSettlementPrice,
+  Warranty, ReturnItem, InventoryTransfer,
   TimeShift, Quote, BankTransaction, SupplierOrder, InventoryAudit, SalarySettlement, Supplier,
   ReceiptConfig, StoreConfig
 } from '../../types';
@@ -23,7 +23,6 @@ export interface SyncResult {
     currencies: number;
     transactions: number;
     cashSessions: number;
-    idnSettlementPrices: number;
   };
   errors?: string[];
 }
