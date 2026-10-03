@@ -39,17 +39,17 @@ import {
 } from "lucide-react";
 
 const adminNavItems = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Punto de Venta", href: "/pos", icon: ShoppingCart },
-  { name: "Transferencias", href: "/transfers", icon: ArrowLeftRight },
-  { name: "Clientes (POS)", href: "/customers", icon: UserCircle },
-  { name: "Inventario", href: "/inventory", icon: Package },
-  { name: "Auditoría Stock", href: "/inventory-audit", icon: ClipboardCheck },
-  { name: "Proveedores", href: "/suppliers", icon: Truck },
-  { name: "Cuentas Bancarias", href: "/banks", icon: CreditCard },
-  { name: "Devoluciones", href: "/returns", icon: RotateCcw },
-  { name: "Reportes", href: "/reports", icon: BarChart },
-  { name: "Configuración", href: "/settings", icon: Settings },
+  { name: "Dashboard", href: "/", icon: LayoutDashboard, permission: "reports.view" },
+  { name: "Punto de Venta", href: "/pos", icon: ShoppingCart, permission: "pos.access" },
+  { name: "Transferencias", href: "/transfers", icon: ArrowLeftRight, permission: "inventory.manage" },
+  { name: "Clientes (POS)", href: "/customers", icon: UserCircle, permission: "customers.manage" },
+  { name: "Inventario", href: "/inventory", icon: Package, permission: "inventory.manage" },
+  { name: "Auditoría Stock", href: "/inventory-audit", icon: ClipboardCheck, permission: "inventory.manage" },
+  { name: "Proveedores", href: "/suppliers", icon: Truck, permission: "suppliers.manage" },
+  { name: "Cuentas Bancarias", href: "/banks", icon: CreditCard, permission: "settings.manage" },
+  { name: "Devoluciones", href: "/returns", icon: RotateCcw, permission: "pos.access" },
+  { name: "Reportes", href: "/reports", icon: BarChart, permission: "reports.view" },
+  { name: "Configuración", href: "/settings", icon: Settings, permission: "settings.manage" },
 ];
 
 const cashierNavItems = [
@@ -192,7 +192,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [isPosPage]);
 
   const navItems =
-    currentUser?.role === "admin" ? adminNavItems : cashierNavItems;
+    currentUser?.role === "admin"
+      ? adminNavItems
+      : adminNavItems.filter(item => currentUser?.permissions?.includes(item.permission) || item.href === "/pos");
+
+  const visibleNavItems = navItems.length > 0 ? navItems : cashierNavItems;
 
   return (
     <div className="h-[100dvh] w-full min-h-[100dvh] max-h-[100dvh] overflow-hidden bg-primary text-primary flex flex-col md:flex-row relative overscroll-none transition-colors duration-200">
