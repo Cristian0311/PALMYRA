@@ -165,6 +165,5 @@ export function useReportsAnalytics(params: {
     categoryData, hourData, branchData,
   filteredTransfers, transferStats,
     filteredTransactions,
-  idnTotals
   };
 }
