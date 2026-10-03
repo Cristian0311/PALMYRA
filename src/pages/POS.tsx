@@ -24,7 +24,6 @@ export default function POS() {
   const [showCashManagementModal, setShowCashManagementModal] = useState(false);
   const [lastClosedSession, setLastClosedSession] = useState<CashRegisterSession | null>(null);
   const [showOpenShiftModal, setShowOpenShiftModal] = useState(false);
-  const [joiningSessionId, setJoiningSessionId] = useState<string | null>(null);
 
 
   // Heavy administrative collections subscribe only while their UI is visible.
@@ -255,7 +254,6 @@ export default function POS() {
       setCashManagementTab('movements');
       setDeductFromSalary(false);
       setShowOpenShiftModal(false);
-      setJoiningSessionId(null);
       setJoiningSessionPassword("");
       setLastClosedSession(null);
       setActiveSessionId(null);
@@ -1976,20 +1974,6 @@ export default function POS() {
                         </div>
                       </div>
 
-<div>
-                        <label className="block text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                          {currentUser?.role === 'admin' ? 'Contraseña del Empleado Seleccionado' : 'Contraseña del Empleado'}
-                        </label>
-                        <input
-                          type="password"
-                          required
-                          autoComplete="current-password"
-                          value={sessionPassword}
-                          onChange={e => setSessionPassword(e.target.value)}
-                          placeholder={detectedWorker ? `Ingresa la contraseña de ${detectedWorker?.name || 'trabajador'}` : "Ingresa la contraseña del trabajador"}
-                          className="w-full px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        />
-                      </div>
                     </div>
 
 {(allowedBranches || []).length > 0 ? (
@@ -3130,11 +3114,7 @@ export default function POS() {
             <span>•</span>
             <span className="truncate max-w-[160px] text-slate-300 flex items-center gap-1.5">
               {branches.find(b => b.id === currentBranchId)?.name || branches[0]?.name || 'Sucursal General'}
-              {isBranchLocked && (
-                <span className="flex items-center gap-0.5 bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded text-[8px] border border-amber-500/30">
-                  <Lock className="w-2.5 h-2.5" /> Bloqueado
-                </span>
-              )}
+
             </span>
           </div>
 
