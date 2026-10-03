@@ -93,6 +93,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const handleCompanyReady = () => setHasCompany(true);
+    window.addEventListener('palmyra:company-ready', handleCompanyReady);
+    return () => window.removeEventListener('palmyra:company-ready', handleCompanyReady);
+  }, []);
+
+  useEffect(() => {
     if (!isInitialized) return;
     let active = true;
 
