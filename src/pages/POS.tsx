@@ -1507,7 +1507,7 @@ export default function POS() {
     const totalSalary = baseSalary + commissions;
 
     const lines: string[] = [];
-    lines.push(`CENTER|BOLD|${receiptConfig.businessName || 'MARÉ POS'}`);
+    lines.push(`CENTER|BOLD|${receiptConfig.businessName || 'PALMYRA POS'}`);
     if (receiptConfig.showAddress && receiptConfig.businessAddress) lines.push(`CENTER|${receiptConfig.businessAddress}`);
     if (receiptConfig.showPhone && receiptConfig.businessPhone) lines.push(`CENTER|${receiptConfig.businessPhone}`);
     lines.push("---");
@@ -1638,7 +1638,7 @@ export default function POS() {
     lines.push(`BOLD|${totSalLabel}${" ".repeat(Math.max(1, 32 - totSalLabel.length - totSalVal.length))}${totSalVal}`);
     lines.push("---");
     lines.push("CENTER|Firma: _________________");
-    lines.push("CENTER|MARÉ SISTEMA POS");
+    lines.push("CENTER|PALMYRA SISTEMA POS");
 
     return lines;
   };
@@ -1819,7 +1819,7 @@ export default function POS() {
     const currentTransactions = useStore.getState().transactions.filter(t => !t.deletedAt);
     const txCount = currentTransactions.length;
     const maxTicketNum = currentTransactions.reduce((max, t) => {
-      const match = t.id?.match(/TIKECT ID-MARE(\d+)/i);
+      const match = t.id?.match(/PALMYRA-TK(\d+)/i);
       return match ? Math.max(max, parseInt(match[1], 10)) : max;
     }, 0);
     const activeSellerId = false
@@ -1839,7 +1839,7 @@ export default function POS() {
     // dos terminales pueden tener el mismo estado y generar el mismo ticket.
     const nextTicketNum = Math.max(txCount, maxTicketNum) + 1;
     const ticketSerial = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
-    const txId = `TIKECT ID-MARE${nextTicketNum.toString().padStart(2, '0')}-${ticketSerial}`;
+    const txId = `PALMYRA-TK${nextTicketNum.toString().padStart(2, '0')}-${ticketSerial}`;
 
     const tx: import('../types').Transaction = {
       id: txId,
@@ -1966,11 +1966,11 @@ export default function POS() {
         return;
       }
 
-      const workerToAssign = false
-        : ((sessionWorkerId && users.find(u => u.id === sessionWorkerId)) ||
-          detectedWorker ||
-          users.find(u => (u.name || '').trim().toLowerCase() === trimmedWorkerName.toLowerCase()) ||
-          null);
+      const workerToAssign =
+        (sessionWorkerId && users.find(u => u.id === sessionWorkerId)) ||
+        detectedWorker ||
+        users.find(u => (u.name || '').trim().toLowerCase() === trimmedWorkerName.toLowerCase()) ||
+        null;
 
       if (!workerToAssign || workerToAssign.isActive === false) {
         setPosError("No se encontró un empleado activo con ese nombre. Actualiza el directorio y vuelve a seleccionar.");
@@ -1982,11 +1982,9 @@ export default function POS() {
       // y se autentica con la contraseña de ESE trabajador.
       // La sucursal queda limitada a las sucursales asignadas al trabajador seleccionado.
       const workerBranchIds = new Set(
-        workerToAssign.branchId
-          ? [workerToAssign.branchId]
-          : workerToAssign.branchId
-            ? [workerToAssign.branchId]
-            : (workerToAssign.allowedBranches || [])
+        workerToAssign.allowedBranches?.length
+          ? workerToAssign.allowedBranches
+          : (workerToAssign.branchId ? [workerToAssign.branchId] : [])
       );
       const permittedBranchIds = currentUser?.role === 'admin'
         ? new Set((branches || []).map(b => b.id))
@@ -4391,7 +4389,7 @@ export default function POS() {
 
             return (
               <div className="space-y-1">
-                <div className="text-center font-black text-sm uppercase">{receiptConfig?.businessName || 'MARÉ POS'}</div>
+                <div className="text-center font-black text-sm uppercase">{receiptConfig?.businessName || 'PALMYRA POS'}</div>
                 {receiptConfig?.showAddress && receiptConfig?.businessAddress && (
                   <div className="text-center text-[9px]">{receiptConfig.businessAddress}</div>
                 )}
