@@ -10,6 +10,7 @@ export interface AppState {
   users: User[];
   currentUser: User | null;
   login: (email: string, pass: string) => Promise<boolean>;
+  quickLogin: () => Promise<boolean>;
   logout: () => void;
   clearAllData: () => Promise<void>;
   clearReportsHistory: () => Promise<void>;
