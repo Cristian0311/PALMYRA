@@ -814,11 +814,6 @@ export function exportFullReportsToExcel(data: ExcelExportData) {
   formatWorksheet(retWs, retAoa, 0, true);
   XLSX.utils.book_append_sheet(wb, retWs, 'Garantías y Devoluciones');
 
-  // 9. Liquidaciones IDN (Vendedores Independientes)
-  const idnAoa = generateLegacyRemovedSheet(data);
-  const idnWs = XLSX.utils.aoa_to_sheet(idnAoa);
-  formatWorksheet(idnWs, idnAoa, 0, true);
-  XLSX.utils.book_append_sheet(wb, idnWs, 'Liquidaciones IDN');
 
   // 10. Auditoría de Descuadres y Cierres Forzados
   const discAoa = generateDiscrepanciesSheet(data);
