@@ -2089,8 +2089,6 @@ export default function POS() {
                   </form>
                 </div>
               )}
-
-          )}
         </div>
       )}
 
