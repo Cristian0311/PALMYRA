@@ -44,14 +44,6 @@ export default function POS() {
   const activeTransactions = useMemo(() => transactions.filter(t => !t.deletedAt), [transactions]);
   const [showConfigModal, setShowConfigModal] = useState(false);
 
-    tx: Transaction;
-    details: any[];
-    workerName: string;
-    branchName: string;
-    totalToPay: number;
-    publicSales: number;
-    date: string;
-  } | null>(null);
 
 
 
