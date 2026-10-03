@@ -1350,7 +1350,6 @@ export default function POS() {
     }, 0);
 
     const employee = users.find(u => u.id === session.userId || u.name === session.workerName) || users.find(u => u.name?.toLowerCase() === session.workerName?.toLowerCase()) || users.find(u => u.role === 'employee') || currentUser;
-    const isIndependent = false;
 
     // Calculate total cost for shop (what the independent seller owes the shop)
     const totalShopCost = sessionTx.reduce((sum, tx) => {
