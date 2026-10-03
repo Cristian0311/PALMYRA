@@ -42,12 +42,6 @@ export default function POS() {
     ) || null;
   }, [activeCashSessions]);
   const activeTransactions = useMemo(() => transactions.filter(t => !t.deletedAt), [transactions]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-    }, 200);
-    return () => clearTimeout(timer);
-
   const [showConfigModal, setShowConfigModal] = useState(false);
 
     tx: Transaction;
@@ -126,7 +120,7 @@ export default function POS() {
   const [showCameraScanner, setShowCameraScanner] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '', taxId: '' });
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [configData, setConfigData] = useState<{ serialNumber?: string, selectedSize?: string, selectedColor?: string }>({});
+  const [configData, setConfigData] = useState<{ serialNumber ? string, selectedSize ? string, selectedColor ? string }>({});
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   
   const [showMobileCart, setShowMobileCart] = useState(false);
@@ -136,7 +130,7 @@ export default function POS() {
   
   
   const navigate = useNavigate();
-  const fallbackSessionBranchId = currentBranchId || (currentUser?.branchId || currentUser?.assignedBranchId || branches[0]?.id || '');
+  const fallbackSessionBranchId = currentBranchId || (currentUser?.branchId || currentUser?.branchId || branches[0]?.id || '');
   const currentSession = useMemo(() => {
     if (activeSessionId) {
       const active = cashSessions.find(s => s.id === activeSessionId && s.status === 'open' && !s.deletedAt);
@@ -189,7 +183,7 @@ export default function POS() {
     }).catch(() => {});
   }, []);
   
-  type PaymentLine = { id: string, code: string, amount: number, method: 'cash' | 'transfer', bankCardId?: string };
+  type PaymentLine = { id: string, code: string, amount: number, method: 'cash' | 'transfer', bankCardId ? string };
   const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([]);
   const [showReceiptModal, setShowReceiptModal] = useState<Transaction | null>(null);
   const [returnConfirm, setReturnConfirm] = useState<{ tx: Transaction, item: any } | null>(null);
@@ -300,124 +294,7 @@ export default function POS() {
 
 ;
 
-  const handleExecuteSettlement = async () => {
-    const targetWorker = currentSessionWorker;
-    const branchId = currentBranchId;
-    if (!targetWorker || !branchId) {
-      setShowConfirmModal(false);
-      return;
-    }
-
-    setIsProcessing(true);
-    try {
-      const settlementDetails: any[] = [];
-      let totalToPay = 0;
-
-      const branchInventory = (inventory || []).filter(i => i.branchId === branchId);
-      
-      for (const invItem of branchInventory) {
-        const product = (products || []).find(p => p.id === invItem.productId);
-        if (!product) continue;
-
-          sp => sp.userId === targetWorker.id && sp.productId === product.id
-        )?.settlementPrice || product.costPrice || 0;
-
-        const soldQty = Math.max(0, invItem.quantity - physicalCount);
-
-        if (soldQty > 0) {
-          const subtotal = soldQty * settlementPrice;
-          totalToPay += subtotal;
-          settlementDetails.push({
-            productId: product.id,
-            name: product.name,
-            sku: product.sku,
-            qty: soldQty,
-            publicPrice: product.price || 0,
-            price: settlementPrice,
-            subtotal
-          });
-        } else if (physicalCount > invItem.quantity) {
-          // If physical count was manually increased above system stock without sales, update stock directly
-          setInventoryQuantity(product.id, branchId, physicalCount);
-        }
-      }
-
-      // Permitir liquidación con 0 ventas o 0 CUP de acuerdo a la solicitud del usuario
-      const currentTransactions = useStore.getState().transactions.filter(t => !t.deletedAt);
-      const maxIdnNum = currentTransactions.reduce((max, t) => {
-        const match = t.id?.match(/LIQ--(\d+)/i);
-        return match ? Math.max(max, parseInt(match[1], 10)) : max;
-      }, 0);
-      const nextIdnNum = Math.max(currentTransactions.length, maxIdnNum) + 1;
-      // El número visible sigue siendo legible, pero el ID físico incluye una
-      // huella aleatoria para evitar colisiones entre POS/tablets trabajando offline.
-      const idnSerial = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase();
-      const idnTxId = `LIQ--${nextIdnNum.toString().padStart(2, '0')}-${idnSerial}`;
-
-      const transaction: Transaction = {
-        id: idnTxId,
-        items: settlementDetails.map(d => ({
-          id: crypto.randomUUID(),
-          product: (products || []).find(p => p.id === d.productId) || {
-            id: d.productId,
-            name: d.name,
-            price: d.publicPrice,
-            costPrice: d.price,
-            sku: d.sku || ''
-          } as any,
-          quantity: d.qty,
-          price: d.price,
-          total: d.subtotal
-        })),
-        total: totalToPay,
-        date: new Date().toISOString(),
-        paymentMethod: 'cash',
-        payments: [{
-          method: 'cash',
-          amount: totalToPay,
-          currencyCode: baseCurrency.code,
-          exchangeRate: 1
-        }],
-        branchId: branchId,
-        userId: targetWorker.id,
-        cashierName: targetWorker.name,
-        sessionId: currentSession?.id,
-        notes: 'LIQUIDACION_',
-        status: 'completed'
-      };
-
-      // La cierre de caja debe quedar confirmada o durablemente encolada
-      // antes de mostrar éxito y, especialmente, antes de cerrar el turno.
-      const saved = await useStore.getState().processTransaction(transaction);
-      if (!saved) {
-        setPosError('La cierre de caja no fue confirmada. El turno permanece abierto y la operación sigue protegida para reintento.');
-        return;
-      }
-
-      const branchName = branches.find(b => b.id === branchId)?.name || 'Almacén Asignado';
-      const totalPublicSales = settlementDetails.reduce((sum, d) => sum + ((d.publicPrice || d.price) * d.qty), 0);
-      const receiptData = {
-        tx: transaction,
-        details: settlementDetails,
-        workerName: targetWorker.name || 'Empleado',
-        branchName: branchName,
-        totalToPay: totalToPay,
-        publicSales: totalPublicSales,
-        date: transaction.date
-      };
-
-      setShowReceiptModal(receiptData);
-      setIdnPhysicalCounts({});
-      setPosSuccess(`Liquidación de ${targetWorker.name} procesada correctamente.`);
-      setTimeout(() => setPosSuccess(""), 3500);
-      setShowConfirmModal(false);
-    } catch (err) {
-      console.error("Error in  settlement:", err);
-      setPosError("Error al procesar la liquidación.");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+;
 
 ;
 
@@ -539,7 +416,7 @@ export default function POS() {
     );
 
     const expectedMap = new Map<string, Payment>();
-    const addExpected = (payment: Payment, amountDelta?: number) => {
+    const addExpected = (payment: Payment, amountDelta ? number) => {
       const key = payment.currencyCode + '::' + payment.method;
       const existing = expectedMap.get(key);
       if (existing) {
@@ -744,7 +621,7 @@ export default function POS() {
     }
   };
 
-  const processClose = async (balances: Payment[], discrepancyDeduction?: number, sessionMeta?: Partial<CashRegisterSession>) => {
+  const processClose = async (balances: Payment[], discrepancyDeduction ? number, sessionMeta ? Partial<CashRegisterSession>) => {
     if (!currentSession || isClosingSession) return false;
 
     setIsClosingSession(true);
@@ -955,7 +832,7 @@ export default function POS() {
     setConfigData({ ...configData, serialNumber: randomSN });
   };
 
-  const getProductStock = (productId: string, variantLabel?: string) => {
+  const getProductStock = (productId: string, variantLabel ? string) => {
     return (inventory || []).reduce((total, item) => {
       const stockBranchId = currentSession?.branchId || currentBranchId;
       if (item.branchId !== stockBranchId || item.productId !== productId) return total;
@@ -964,7 +841,7 @@ export default function POS() {
     }, 0);
   };
 
-  const getCartQuantity = (productId: string, variantLabel?: string) => {
+  const getCartQuantity = (productId: string, variantLabel ? string) => {
     return cart
       .filter(item => {
         const pId = typeof (item.product as any) === 'object' && item.product !== null ? item.product.id : item.product;
@@ -1481,7 +1358,7 @@ export default function POS() {
     }, 0);
 
     const employee = users.find(u => u.id === session.userId || u.name === session.workerName) || users.find(u => u.name?.toLowerCase() === session.workerName?.toLowerCase()) || users.find(u => u.role === 'employee') || currentUser;
-    const false = employee?.false || false;
+    const isIndependent = employee?.isIndependent || false;
 
     // Calculate total cost for shop (what the independent seller owes the shop)
     const totalShopCost = sessionTx.reduce((sum, tx) => {
@@ -1493,11 +1370,11 @@ export default function POS() {
       }, 0);
     }, 0);
 
-    const baseSalary = (employee?.baseSalary || 0);
-    const totalSalary = (baseSalary + commissions);
+    const baseSalary = isIndependent ? 0 : (employee?.baseSalary || 0);
+    const totalSalary = isIndependent ? 0 : (baseSalary + commissions);
 
     const lines: string[] = [];
-    lines.push(`CENTER|BOLD|${receiptConfig.businessName || 'PALMYRA POS'}`);
+    lines.push(`CENTER|BOLD|${receiptConfig.businessName || 'MARÉ POS'}`);
     if (receiptConfig.showAddress && receiptConfig.businessAddress) lines.push(`CENTER|${receiptConfig.businessAddress}`);
     if (receiptConfig.showPhone && receiptConfig.businessPhone) lines.push(`CENTER|${receiptConfig.businessPhone}`);
     lines.push("---");
@@ -1505,7 +1382,7 @@ export default function POS() {
     lines.push(`TURNO: ${session.id}`);
     lines.push(`FECHA: ${new Date(session.closingDate || session.closedAt || new Date()).toLocaleDateString()}`);
     lines.push(`HORA: ${new Date(session.closingDate || session.closedAt || new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
-    lines.push(`VENDEDOR: ${(session.workerName || 'VENDEDOR').toUpperCase()}${''}`);
+    lines.push(`EMPLEADO: ${(session.workerName || 'EMPLEADO').toUpperCase()}${isIndependent ? ' (IND)' : ''}`);
     lines.push(`SUCURSAL: ${(branches.find(b => b.id === session.branchId)?.name || 'Central').slice(0, 18)}`);
     lines.push("---");
     lines.push("BOLD|PRODUCTOS VENDIDOS:");
@@ -1526,7 +1403,7 @@ export default function POS() {
     lines.push(`ITEMS TOTALES: ${soldList.reduce((s, i) => s + i.qty, 0)}`);
     lines.push("---");
 
-    if (false) {
+    if (isIndependent) {
       lines.push("BOLD|LIQUIDACION INDEPENDIENTE:");
       const shopLabel = "Costo Fijo Tienda:";
       const shopVal = formatMoney(totalShopCost, baseCurrency.symbol);
@@ -1630,12 +1507,12 @@ export default function POS() {
     lines.push(`BOLD|${totSalLabel}${" ".repeat(Math.max(1, 32 - totSalLabel.length - totSalVal.length))}${totSalVal}`);
     lines.push("---");
     lines.push("CENTER|Firma: _________________");
-    lines.push("CENTER|PALMYRA SISTEMA POS");
+    lines.push("CENTER|MARÉ SISTEMA POS");
 
     return lines;
   };
 
-  const handleThermalPrint = async (tx: import("../types").Transaction, options?: { silent?: boolean }) => {
+  const handleThermalPrint = async (tx: import("../types").Transaction, options ? { silent ? boolean }) => {
     try {
       const lines = getTransactionReceiptLines(tx);
       await printThermalReceiptDirect({
@@ -1664,7 +1541,7 @@ export default function POS() {
     }
   };
 
-  const handlePrintClosureThermal = async (session: CashRegisterSession | null, options?: { silent?: boolean }) => {
+  const handlePrintClosureThermal = async (session: CashRegisterSession | null, options ? { silent ? boolean }) => {
     if (!session) return;
     try {
       const lines = getClosureReceiptLines(session);
@@ -1741,16 +1618,16 @@ export default function POS() {
       setShowOpenShiftModal(true);
       return;
     }
-    // Defensa en profundidad: una cuenta  nunca puede vender usando un
+    // Defensa en profundidad: una cuenta PALMYRA nunca puede vender usando un
     // turno o almacén que pertenezca a otra identidad/sucursal.
     if (false && currentUser?.id) {
-      const assignedBranchId = currentUser.assignedBranchId || currentUser.branchId ||
+      const assignedBranchId = currentUser.branchId || currentUser.branchId ||
         (currentUser.allowedBranches?.length === 1 ? currentUser.allowedBranches[0] : null);
       const ownsSession = currentSession.userId === currentUser.id ||
         currentSession.workingEmployeeIds?.includes(currentUser.id);
       const ownsBranch = !assignedBranchId || currentSession.branchId === assignedBranchId;
       if (!ownsSession || !ownsBranch) {
-        setPosError('Tu cuenta  solo puede vender en tu propio turno y almacén asignado.');
+        setPosError('Tu cuenta PALMYRA solo puede vender en tu propio turno y almacén asignado.');
         setShowOpenShiftModal(true);
         return;
       }
@@ -1813,14 +1690,18 @@ export default function POS() {
     const currentTransactions = useStore.getState().transactions.filter(t => !t.deletedAt);
     const txCount = currentTransactions.length;
     const maxTicketNum = currentTransactions.reduce((max, t) => {
-      const match = t.id?.match(/PALMYRA-TK(\d+)/i);
+      const match = t.id?.match(/TIKECT ID-MARE(\d+)/i);
       return match ? Math.max(max, parseInt(match[1], 10)) : max;
     }, 0);
-    const activeSellerId = currentSession.userId || currentUser?.id || 'u1';
-    const activeSellerName = currentSession.workerName || currentUser?.name || 'Empleado';
+    const activeSellerId = false
+      ? currentUser?.id || currentSession.userId || 'u1'
+      : currentSession.userId || currentUser?.id || 'u1';
+    const activeSellerName = false
+      ? currentUser?.name || currentSession.workerName || 'Empleado'
+      : currentSession.workerName || currentUser?.name || 'Empleado';
     const sellerUser = (users || []).find(u => u.id === activeSellerId) || currentUser;
     const assignedIdnBranch = false
-      ? (currentUser?.assignedBranchId || currentUser?.branchId ||
+      ? (currentUser?.branchId || currentUser?.branchId ||
         (currentUser?.allowedBranches?.length === 1 ? currentUser.allowedBranches[0] : null))
       : null;
     const effectiveBranchId = assignedIdnBranch || currentSession.branchId || sellerUser?.assignedBranchId || currentBranchId || (branches[0]?.id || 'b1');
@@ -1830,7 +1711,7 @@ export default function POS() {
     // dos terminales pueden tener el mismo estado y generar el mismo ticket.
     const nextTicketNum = Math.max(txCount, maxTicketNum) + 1;
     const ticketSerial = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
-    const txId = `PALMYRA-TK${nextTicketNum.toString().padStart(2, '0')}-${ticketSerial}`;
+    const txId = `TIKECT ID-MARE${nextTicketNum.toString().padStart(2, '0')}-${ticketSerial}`;
 
     const tx: import('../types').Transaction = {
       id: txId,
@@ -1957,7 +1838,9 @@ export default function POS() {
         return;
       }
 
-      const workerToAssign = ((sessionWorkerId && users.find(u => u.id === sessionWorkerId)) ||
+      const workerToAssign = false
+        ? users.find(u => u.id === currentUser?.id && u.isIndependent === true) || currentUser
+        : ((sessionWorkerId && users.find(u => u.id === sessionWorkerId)) ||
           detectedWorker ||
           users.find(u => (u.name || '').trim().toLowerCase() === trimmedWorkerName.toLowerCase()) ||
           null);
@@ -1972,8 +1855,8 @@ export default function POS() {
       // y se autentica con la contraseña de ESE trabajador.
       // La sucursal queda limitada a las sucursales asignadas al trabajador seleccionado.
       const workerBranchIds = new Set(
-        workerToAssign.assignedBranchId
-          ? [workerToAssign.assignedBranchId]
+        workerToAssign.branchId
+          ? [workerToAssign.branchId]
           : workerToAssign.branchId
             ? [workerToAssign.branchId]
             : (workerToAssign.allowedBranches || [])
@@ -2112,20 +1995,20 @@ export default function POS() {
     }
 
     if (false) {
-      const assignedBranchId = currentUser?.assignedBranchId || currentUser?.branchId ||
+      const assignedBranchId = currentUser?.branchId || currentUser?.branchId ||
         (currentUser?.allowedBranches?.length === 1 ? currentUser.allowedBranches[0] : null);
       const ownIdentity = targetSession.userId === currentUser?.id ||
         targetSession.workingEmployeeIds?.includes(currentUser?.id || '');
       const ownBranch = !assignedBranchId || targetSession.branchId === assignedBranchId;
       if (!ownIdentity || !ownBranch) {
-        setPosError('Una cuenta  solo puede reanudar su propio turno en su almacén asignado.');
+        setPosError('Una cuenta PALMYRA solo puede reanudar su propio turno en su almacén asignado.');
         return;
       }
     }
 
     const targetBranchIds = new Set(
-      targetUser.assignedBranchId
-        ? [targetUser.assignedBranchId]
+      targetUser.branchId
+        ? [targetUser.branchId]
         : targetUser.branchId
           ? [targetUser.branchId]
           : (targetUser.allowedBranches || [])
@@ -2170,177 +2053,6 @@ export default function POS() {
     setNewCustomer({ name: '', phone: '', email: '', taxId: '' });
   };
 
-
-              Cerrar Cuenta y Liquidar
-            </button>
-          </div>
-        </footer>
-
-        {/* Modal Confirmar Cierre de caja */}
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-100 animate-in zoom-in-95">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <div className="bg-amber-100 p-2 rounded-xl text-amber-700">
-                    <Package className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 uppercase">Confirmar Cierre de caja</h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Empleado: {currentSessionWorker?.name}</p>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setShowConfirmModal(false)}
-                  className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/60 text-xs space-y-2">
-                <div className="flex justify-between font-bold text-slate-600">
-                  <span>Almacén / Sucursal:</span>
-                  <span className="text-slate-900">{branches.find(b => b.id === branchId)?.name || 'Almacén'}</span>
-                </div>
-                <div className="flex justify-between font-bold text-slate-600">
-                  <span>Unidades a descontar:</span>
-                  <span className="text-slate-900">{totalSoldUnits} Uds</span>
-                </div>
-                <div className="flex justify-between font-bold text-slate-600">
-                  <span>Venta al público total:</span>
-                  <span className="text-slate-900">{baseCurrency.symbol}{currentTotalPublicSales.toLocaleString()} CUP</span>
-                </div>
-                <div className="flex justify-between font-black text-amber-800 text-sm pt-2 border-t border-slate-200">
-                  <span>Total a Entregar (CUP):</span>
-                  <span>{baseCurrency.symbol}{currentTotalToPay.toLocaleString()} CUP</span>
-                </div>
-              </div>
-
-              <p className="text-[10px] text-slate-500 leading-relaxed">
-                Al confirmar, el inventario se actualizará inmediatamente según el conteo físico verificado y se generará el vale de liquidación.
-              </p>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmModal(false)}
-                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-xs uppercase tracking-wider transition-all"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExecuteSettlement}
-                  className="flex-1 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition-all shadow-md shadow-amber-600/20 active:scale-95 flex items-center justify-center gap-2"
-                >
-                  Confirmar y Liquidar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Modal Vale de Cierre de caja (con opciones de impresión manual) */}
-          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-50 overflow-hidden animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl max-w-lg w-full max-h-[94vh] sm:max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 overflow-hidden">
-              <div className="text-center space-y-1 p-3.5 sm:p-4 border-b border-slate-100 dark:border-slate-800 bg-amber-50/40 dark:bg-amber-950/20 shrink-0">
-                <div className="w-10 h-10 bg-amber-100 dark:bg-amber-900/50 rounded-2xl flex items-center justify-center mx-auto text-amber-700 dark:text-amber-300 mb-1">
-                  <CheckCircle className="w-5 h-5" />
-                </div>
-                <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white uppercase">Vale de Cierre de caja</h3>
-                <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                </p>
-                <p className="text-[8px] font-medium text-slate-400">
-                </p>
-              </div>
-
-              {/* Detalle de Productos Vendidos - Scrollable */}
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-3.5 sm:p-4 space-y-2.5">
-                <div className="bg-slate-50 dark:bg-slate-800/40 rounded-xl p-2.5 border border-slate-200/60 dark:border-slate-700/60 space-y-1.5">
-                  <div className="flex justify-between text-[8px] font-black text-slate-400 uppercase tracking-wider px-1">
-                    <span>Producto / Cantidad</span>
-                    <span>Monto Liquidado</span>
-                  </div>
-                    <div className="text-center py-4 text-slate-400 text-[9px] uppercase font-black tracking-widest bg-white dark:bg-slate-800 rounded-lg border border-dashed border-slate-200 dark:border-slate-700">
-                      Sin ventas registradas en este turno
-                    </div>
-                  ) : (
-                      <div key={idx} className="flex justify-between items-center bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700 text-xs">
-                        <div className="min-w-0 flex-1 pr-2">
-                          <p className="font-black text-slate-900 dark:text-white uppercase text-[10px] sm:text-[11px] truncate">{item?.name || 'Producto'}</p>
-                          <p className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase">
-                            {item.qty} uds × {baseCurrency.symbol}{item.price.toLocaleString()} CUP
-                          </p>
-                        </div>
-                        <span className="font-mono font-black text-amber-700 dark:text-amber-400 text-xs shrink-0">
-                          {baseCurrency.symbol}{item.subtotal.toLocaleString()} CUP
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                {/* Gran Total */}
-                <div className="bg-amber-50 dark:bg-amber-950/40 p-3 rounded-xl border border-amber-200 dark:border-amber-900/60 flex justify-between items-center">
-                  <div>
-                    <span className="text-[8px] sm:text-[9px] font-black uppercase text-amber-800 dark:text-amber-300 tracking-wider block">Total Entregado / Liquidado</span>
-                    <span className="text-[8px] text-amber-700 dark:text-amber-400">Precio liquidación pactado</span>
-                  </div>
-                  <span className="text-base sm:text-lg font-black text-amber-800 dark:text-amber-300 font-mono">
-                  </span>
-                </div>
-              </div>
-
-              {/* Botones de Impresión y Acción - Sticky Footer */}
-              <div className="p-3 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 space-y-2 shrink-0">
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    className="py-2.5 px-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-black text-[9px] sm:text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
-                  >
-                    <Printer className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
-                    <span>Ticket 58mm</span>
-                  </button>
-                  
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleFinishAndGoHome}
-                  className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black text-[11px] sm:text-xs uppercase tracking-widest transition-all shadow-md shadow-amber-600/20 active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Alerts Overlay */}
-        {(posError || posSuccess) && (
-          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2">
-            {posError && (
-              <div className="bg-rose-600 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4">
-                <AlertCircle className="w-5 h-5" />
-                <span className="text-[10px] font-black uppercase">{posError}</span>
-                <button onClick={() => setPosError("")} className="ml-2 p-1 hover:bg-white/10 rounded-lg">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-            {posSuccess && (
-              <div className="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4">
-                <CheckCircle className="w-5 h-5" />
-                <span className="text-[10px] font-black uppercase">{posSuccess}</span>
-                <button onClick={() => setPosSuccess("")} className="ml-2 p-1 hover:bg-white/10 rounded-lg">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="h-full flex flex-col min-h-0 relative">
@@ -2613,7 +2325,7 @@ export default function POS() {
                                     })
                                     .map(u => {
                                       const isSelected = sessionWorkerName === (u.name || '');
-                                      const isIdn = u.false === true;
+                                      const false = u.isIndependent === true;
                                       const open = openSessionForWorker(u.id);
                                       return (
                                         <button
@@ -2628,7 +2340,7 @@ export default function POS() {
                                             setEmployeePickerSearch(workerName);
                                             setEmployeePickerOpen(false);
                                             setSessionPassword('');
-                                            if (u.assignedBranchId) setSessionBranchId(u.assignedBranchId);
+                                            if (u.branchId) setSessionBranchId(u.branchId);
                                             else if (u.branchId) setSessionBranchId(u.branchId);
                                             else if ((u.allowedBranches || []).length === 1) setSessionBranchId(u.allowedBranches![0]);
                                             setPosError('');
@@ -2644,9 +2356,9 @@ export default function POS() {
                                             </span>
                                             <span className={cn(
                                               "block text-[7px] font-black uppercase tracking-wider mt-0.5",
-                                              isIdn ? "text-amber-700" : "text-slate-400"
+                                              false ? "text-amber-700" : "text-slate-400"
                                             )}>
-                                              {isIdn ? "VENDEDOR " : (u.role === 'admin' ? "ADMINISTRADOR" : "EMPLEADO")}
+                                              {false ? "EMPLEADO" : (u.role === 'admin' ? "ADMINISTRADOR" : "EMPLEADO")}
                                             </span>
                                           </div>
                                           <span className={cn(
@@ -2678,7 +2390,7 @@ export default function POS() {
                             </span>
                             <span className="inline-flex items-center gap-1 text-amber-700">
                               <span className="w-2 h-2 rounded-full bg-amber-500" />
-                              VENDEDOR 
+                              EMPLEADO PALMYRA
                             </span>
                             <span className="inline-flex items-center gap-1 text-emerald-700">
                               <span className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -2691,7 +2403,7 @@ export default function POS() {
 
                       <div>
                         <label className="block text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                          {'Contraseña del Empleado Seleccionado'}
+                          {false ? 'Contraseña de tu cuenta PALMYRA' : 'Contraseña del Empleado Seleccionado'}
                         </label>
                         <input
                           type="password"
@@ -2709,7 +2421,7 @@ export default function POS() {
                       <div className="p-1.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-1.5 text-left">
                         <Package className="w-3 h-3 text-amber-600 shrink-0" />
                         <p className="text-[8px] font-black text-amber-800 uppercase tracking-tight">
-                          Empleado () • Almacén exclusivo bloqueado
+                          Empleado Independiente (PALMYRA) • Almacén exclusivo bloqueado
                         </p>
                       </div>
                     )}
@@ -2840,7 +2552,7 @@ export default function POS() {
 
               {/* Turnos Abiertos en Curso (Evita duplicidad y permite reanudar con contraseña) */}
               {(() => {
-                // Las cuentas  no deben ver ni poder escoger turnos de terceros.
+                // Las cuentas PALMYRA no deben ver ni poder escoger turnos de terceros.
                 if (false) return null;
                 const otherOpenSessions = (activeCashSessions || []).filter(s => s.status === 'open');
                 if (otherOpenSessions.length === 0) return null;
@@ -3584,7 +3296,7 @@ export default function POS() {
                       {/* Salary Calculation Card */}
                       {(() => {
                         const sessionUser = users.find(u => u.id === currentSession?.userId || (u.name && currentSession?.workerName && u.name.toLowerCase() === currentSession.workerName.toLowerCase())) || currentUser;
-                        if (!sessionUser || sessionUser.false) return null;
+                        if (!sessionUser || sessionUser.isIndependent) return null;
                         
                         const sessionTx = activeTransactions.filter(t => 
                           t.sessionId === currentSession?.id && !t.deletedAt
@@ -4253,9 +3965,9 @@ export default function POS() {
                 );
 
                 const employee = users.find(u => u.id === lastClosedSession.userId || u.name === lastClosedSession.workerName) || users.find(u => u.name?.toLowerCase() === lastClosedSession.workerName?.toLowerCase()) || users.find(u => u.role === 'employee') || currentUser;
-                const false = employee?.false === true;
+                const isIndependent = employee?.isIndependent === true;
 
-                const commissions = sessionTransactions.reduce((sum, tx) => {
+                const commissions = isIndependent ? 0 : sessionTransactions.reduce((sum, tx) => {
                   return sum + (tx.items || []).reduce((s, item) => {
                     const prodId = typeof item.product === 'string' ? item.product : item.product?.id;
                     const prod = products.find(p => p.id === prodId);
@@ -4265,7 +3977,7 @@ export default function POS() {
                   }, 0);
                 }, 0);
 
-                const baseSalary = (employee?.baseSalary || 0);
+                const baseSalary = isIndependent ? 0 : (employee?.baseSalary || 0);
                 const settlement = salarySettlements.find(s => s.sessionId === lastClosedSession.id);
                 const deduction = settlement?.discrepancyDeduction || 0;
                 const totalSalary = (baseSalary + commissions) - deduction;
@@ -4557,7 +4269,7 @@ export default function POS() {
 
             return (
               <div className="space-y-1">
-                <div className="text-center font-black text-sm uppercase">{receiptConfig?.businessName || 'PALMYRA POS'}</div>
+                <div className="text-center font-black text-sm uppercase">{receiptConfig?.businessName || 'MARÉ POS'}</div>
                 {receiptConfig?.showAddress && receiptConfig?.businessAddress && (
                   <div className="text-center text-[9px]">{receiptConfig.businessAddress}</div>
                 )}
@@ -4575,8 +4287,8 @@ export default function POS() {
                   <span>{new Date(lastClosedSession.closingDate || lastClosedSession.closedAt || new Date()).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-[10px]">
-                  <span>VENDEDOR:</span>
-                  <span className="font-bold uppercase">{lastClosedSession.workerName || 'VENDEDOR'}</span>
+                  <span>EMPLEADO:</span>
+                  <span className="font-bold uppercase">{lastClosedSession.workerName || 'EMPLEADO'}</span>
                 </div>
                 <div className="flex justify-between text-[10px]">
                   <span>SUCURSAL:</span>
