@@ -112,7 +112,7 @@ export default function POS() {
   const [showCameraScanner, setShowCameraScanner] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '', taxId: '' });
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [configData, setConfigData] = useState<{ serialNumber ? string, selectedSize ? string, selectedColor ? string }>({});
+  const [configData, setConfigData] = useState<{ serialNumber?: string; selectedSize?: string; selectedColor?: string }>({});
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   
   const [showMobileCart, setShowMobileCart] = useState(false);
@@ -175,7 +175,7 @@ export default function POS() {
     }).catch(() => {});
   }, []);
   
-  type PaymentLine = { id: string, code: string, amount: number, method: 'cash' | 'transfer', bankCardId ? string };
+  type PaymentLine = { id: string, code: string, amount: number, method: 'cash' | 'transfer', bankCardId?: string };
   const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([]);
   const [showReceiptModal, setShowReceiptModal] = useState<Transaction | null>(null);
   const [returnConfirm, setReturnConfirm] = useState<{ tx: Transaction, item: any } | null>(null);
@@ -408,7 +408,7 @@ export default function POS() {
     );
 
     const expectedMap = new Map<string, Payment>();
-    const addExpected = (payment: Payment, amountDelta ? number) => {
+    const addExpected = (payment: Payment, amountDelta?: number) => {
       const key = payment.currencyCode + '::' + payment.method;
       const existing = expectedMap.get(key);
       if (existing) {
@@ -613,7 +613,7 @@ export default function POS() {
     }
   };
 
-  const processClose = async (balances: Payment[], discrepancyDeduction ? number, sessionMeta ? Partial<CashRegisterSession>) => {
+  const processClose = async (balances: Payment[], discrepancyDeduction?: number, sessionMeta?: Partial<CashRegisterSession>) => {
     if (!currentSession || isClosingSession) return false;
 
     setIsClosingSession(true);
@@ -824,7 +824,7 @@ export default function POS() {
     setConfigData({ ...configData, serialNumber: randomSN });
   };
 
-  const getProductStock = (productId: string, variantLabel ? string) => {
+  const getProductStock = (productId: string, variantLabel?: string) => {
     return (inventory || []).reduce((total, item) => {
       const stockBranchId = currentSession?.branchId || currentBranchId;
       if (item.branchId !== stockBranchId || item.productId !== productId) return total;
@@ -833,7 +833,7 @@ export default function POS() {
     }, 0);
   };
 
-  const getCartQuantity = (productId: string, variantLabel ? string) => {
+  const getCartQuantity = (productId: string, variantLabel?: string) => {
     return cart
       .filter(item => {
         const pId = typeof (item.product as any) === 'object' && item.product !== null ? item.product.id : item.product;
@@ -1503,7 +1503,7 @@ export default function POS() {
     return lines;
   };
 
-  const handleThermalPrint = async (tx: import("../types").Transaction, options ? { silent ? boolean }) => {
+  const handleThermalPrint = async (tx: import("../types").Transaction, options?: { silent?: boolean }) => {
     try {
       const lines = getTransactionReceiptLines(tx);
       await printThermalReceiptDirect({
@@ -1532,7 +1532,7 @@ export default function POS() {
     }
   };
 
-  const handlePrintClosureThermal = async (session: CashRegisterSession | null, options ? { silent ? boolean }) => {
+  const handlePrintClosureThermal = async (session: CashRegisterSession | null, options?: { silent?: boolean }) => {
     if (!session) return;
     try {
       const lines = getClosureReceiptLines(session);
