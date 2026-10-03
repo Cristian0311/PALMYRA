@@ -75,10 +75,8 @@ export default function App() {
         if (!active) return;
         if (ctx) {
           useStore.setState({ currentUser: ctx.user, currentBranchId: ctx.warehouseIds[0] || '' });
-          setHasCompany(Boolean(ctx.companyId));
         } else {
           ensureLocalAdmin();
-          setHasCompany(true);
         }
       } finally {
         if (active) setAuthBootstrapping(false);
@@ -88,11 +86,6 @@ export default function App() {
     return () => { active = false; };
   }, []);
 
-  useEffect(() => {
-    const handleCompanyReady = () => setHasCompany(true);
-    window.addEventListener('palmyra:company-ready', handleCompanyReady);
-    return () => window.removeEventListener('palmyra:company-ready', handleCompanyReady);
-  }, []);
 
   useEffect(() => {
     if (!isInitialized) return;
