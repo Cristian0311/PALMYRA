@@ -3,7 +3,7 @@ import {
   ArrowRight, BarChart3, Boxes, Check, ChevronDown, ChevronRight, Cloud,
   CreditCard, Gauge, Menu, Package, ReceiptText, ShieldCheck, ShoppingCart,
   Sparkles, Store, Users, WalletCards, X, Zap, Building2, Warehouse,
-  UserRound, Settings2, CircleCheck
+  UserRound, Settings2, CircleCheck, Network, Landmark, Layers3
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { PALMYRA_PLANS } from '../config/saas';
