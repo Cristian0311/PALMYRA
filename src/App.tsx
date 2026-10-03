@@ -54,12 +54,12 @@ function PageLoading() {
   return (
     <div className="flex-1 min-h-[50vh] relative" aria-live="polite" aria-busy="true">
       <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none px-4">
-        <div className="omni-loading-bubble">
-          <span className="omni-loading-icon" aria-hidden="true">
-            <span className="omni-loading-spinner" />
+        <div className="palmyra-loading-bubble">
+          <span className="palmyra-loading-icon" aria-hidden="true">
+            <span className="palmyra-loading-spinner" />
           </span>
           <span className="min-w-0">{label}</span>
-          <span className="omni-loading-dots" aria-hidden="true">•••</span>
+          <span className="palmyra-loading-dots" aria-hidden="true">•••</span>
         </div>
       </div>
     </div>
