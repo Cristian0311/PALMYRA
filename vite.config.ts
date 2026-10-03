@@ -67,7 +67,7 @@ export default defineConfig(() => {
               urlPattern: /\/assets\/.*\.js$/i,
               handler: 'CacheFirst',
               options: {
-                cacheName: 'palmyra-js-runtime-cache',
+                cacheName: 'palmyra-js-runtime-cache-v2',
                 expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 30 }
               }
             }
