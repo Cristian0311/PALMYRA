@@ -2090,7 +2090,6 @@ export default function POS() {
                 </div>
               )}
 
-            </>
           )}
         </div>
       )}
