@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 72" fill="none">
+  <title>PALMYRA camel logo</title>
+  <path d="M10 53h10l2.4-18.5c1-7.5 5.8-12 12.4-12 5 0 8.8 2.3 11.1 6.4 2.2-8.7 7.2-13.2 14.8-13.2 8.6 0 13.7 6.8 12.5 15.5L81 53H69.8l1.9-18c.7-5.4-1.2-8.8-5.2-8.8-4.2 0-6.5 3.9-7 9.1L58 53H43.8l1.8-17.8c.6-5.2-1.4-8.3-5.1-8.3-4.1 0-6.4 3.4-7 8.4L31.6 53H10Z" fill="currentColor"/>
+  <path d="M59.8 20.2c4.4 0 8.1 2.2 10.6 6.2l7.3-6.6" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="78.6" cy="17.2" r="2" fill="#E56B99"/>
+  <path d="M15 59h13M43 59h13M67 59h13" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+</svg>
