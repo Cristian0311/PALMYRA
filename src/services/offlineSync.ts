@@ -85,15 +85,15 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
         // comisiones desde las ventas que realmente existen en Supabase para
         // que una venta rechazada no termine dentro de la liquidación salarial.
         const { data: persistedSales, error: salesError } = await supabase
-          .from('transactions')
-          .select('id,status,deleted_at,items')
-          .eq('session_id', session.id);
+          .from('sales')
+          .select('id,status,metadata')
+          .eq('cash_session_id', session.id);
         if (salesError) throw salesError;
 
         let commissions = 0;
         for (const sale of persistedSales || []) {
-          if (sale.status !== 'completed' || sale.deleted_at) continue;
-          const items = Array.isArray(sale.items) ? sale.items : [];
+          if (sale.status !== 'completed' || sale.status === 'voided' || sale.status === 'refunded') continue;
+          const items = Array.isArray(sale.metadata?.items) ? sale.metadata.items : [];
           for (const item of items) {
             const product = item?.product;
             const commissionValue = Number(
@@ -151,7 +151,7 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
       // reconciliamos metadatos de una sesión ya existente.
       const { data: remoteSession, error: remoteReadError } = await supabase
         .from('cash_sessions')
-        .select('id,status,closed_at,deleted_at,deleted_by,delete_reason,branch_id,user_id')
+        .select('id,status,closed_at,employee_id')
         .eq('id', session.id)
         .maybeSingle();
       if (remoteReadError) throw remoteReadError;
@@ -370,7 +370,7 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
       // Al reintentar tras una caída, la RPC puede haber confirmado la venta
       // antes de que la tablet muriera. El replay debe restaurar el inventario
       // local desde el servidor y no volver a confiar en el snapshot offline.
-      const branchId = persisted.branch_id || transaction.branchId;
+      const branchId = persisted.warehouse_id || transaction.branchId;
       if (branchId) {
         const inventoryRes = await pullBranchInventoryFromSupabase(branchId);
         if (!inventoryRes.success) {
@@ -407,16 +407,16 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
       }
 
       const { data: persistedVoid, error: voidReadError } = await supabase
-        .from('transactions')
-        .select('id,status,branch_id')
+        .from('sales')
+        .select('id,status,warehouse_id')
         .eq('id', data.id)
         .maybeSingle();
       if (voidReadError) throw voidReadError;
-      if (!persistedVoid || persistedVoid.status !== 'refunded') {
+      if (!persistedVoid || !['voided','refunded'].includes(persistedVoid.status)) {
         throw new Error('Supabase no confirmó la anulación de la venta');
       }
-      if (persistedVoid.branch_id) {
-        const inventoryRes = await pullBranchInventoryFromSupabase(persistedVoid.branch_id);
+      if (persistedVoid.warehouse_id) {
+        const inventoryRes = await pullBranchInventoryFromSupabase(persistedVoid.warehouse_id);
         if (!inventoryRes.success) throw new Error(inventoryRes.message || 'No se pudo reconciliar el inventario de la anulación');
         useStore.setState(state => ({
           inventory: [
@@ -439,16 +439,16 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
       }
 
       const { data: persistedReturn, error: returnReadError } = await supabase
-        .from('returns')
-        .select('id,status,branch_id')
+         .from('sales_returns')
+        .select('id,status')
         .eq('id', data.id)
         .maybeSingle();
       if (returnReadError) throw returnReadError;
       if (!persistedReturn || persistedReturn.status !== 'completed') {
         throw new Error('Supabase no confirmó la devolución como completada');
       }
-      if (persistedReturn.branch_id) {
-        const inventoryRes = await pullBranchInventoryFromSupabase(persistedReturn.branch_id);
+      if (data.branchId) {
+        const inventoryRes = await pullBranchInventoryFromSupabase(data.branchId);
         if (!inventoryRes.success) throw new Error(inventoryRes.message || 'No se pudo reconciliar el inventario de la devolución');
         useStore.setState(state => ({
           inventory: [
