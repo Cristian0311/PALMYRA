@@ -65,7 +65,25 @@ function PageLoading() {
 export default function App() {
   const { currentUser, isInitialized, restoreTransactionsFromBackup, currentBranchId } = useStore(useShallow((state) => ({ currentUser: state.currentUser, isInitialized: state.isInitialized, restoreTransactionsFromBackup: state.restoreTransactionsFromBackup, currentBranchId: state.currentBranchId })));
   const [authBootstrapping, setAuthBootstrapping] = useState(true);
-  const [hasCompany, setHasCompany] = useState(false);
+
+  const ensureLocalAdmin = () => {
+    const current = useStore.getState().currentUser;
+    if (current) return current;
+    const localAdmin = {
+      id: 'palmyra-local-admin',
+      name: 'Administrador',
+      email: '',
+      role: 'admin' as const,
+      baseSalary: 0,
+      permissions: ['pos_access', 'reports_access', 'inventory_access', 'admin_access', 'cash_audit'],
+      isActive: true,
+    };
+    useStore.setState({
+      currentUser: localAdmin,
+      currentBranchId: useStore.getState().currentBranchId || '',
+    });
+    return localAdmin;
+  };
 
   useEffect(() => {
     let active = true;
