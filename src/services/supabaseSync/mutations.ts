@@ -1,6 +1,10 @@
 import { getSupabase } from '../../lib/supabase';
 import { enqueueOfflineItem } from '../offlineSync';
 import { getActiveTenant, getEmployeeForIdentity } from '../tenant';
+export type ResetSection =
+  | 'inventory' | 'reports' | 'catalog' | 'customers' | 'suppliers'
+  | 'purchases' | 'cash' | 'bank' | 'users' | 'branches' | 'quotes' | 'settings';
+
 import type {
   Product, Category, Branch, InventoryLevel, User, BankCard, Customer, Transaction, CashRegisterSession,
   Warranty, ReturnItem, InventoryTransfer, TimeShift, Quote, BankTransaction, SupplierOrder,
@@ -94,7 +98,17 @@ export async function pushCashSessionToSupabase(session:CashRegisterSession):Pro
     const payload={id:session.id,company_id:companyId,cash_register_id:cashRegisterId,employee_id:employee?.id||null,opened_by:authUserId,closed_by:session.status!=='open'?authUserId:null,status:session.status,opened_at:session.openedAt,closed_at:session.closedAt||null,opening_amount:Number(session.openingAmount??session.openingBalance)||0,expected_cash:Number(session.expectedBalance)||null,physical_cash:session.closingBalances?.find((p:any)=>p.method==='cash')?.amount??null,difference:0,turn_number:Number(session.turnNumber)||null};
     const {data:existing,error:re}=await supabase.from('cash_sessions').select('id').eq('id',session.id).eq('company_id',companyId).maybeSingle();if(re)throw re;
     const result=existing?.id?await supabase.from('cash_sessions').update(payload).eq('id',session.id).eq('company_id',companyId):await supabase.from('cash_sessions').insert(payload);
-    if(result.error)throw result.error;return true;
+    if(result.error)throw result.error;
+    await supabase.from('cash_movements').delete().eq('cash_session_id',session.id).eq('company_id',companyId);
+    if(session.movements?.length){
+      const rows=session.movements.map((m:any)=>({
+        id:m.id,company_id:companyId,cash_session_id:session.id,movement_type:m.type||'expense',
+        amount:Number(m.amount)||0,currency_code:m.currencyCode||'USD',reference_id:null,note:m.description||'',
+        created_by:authUserId
+      }));
+      const {error:movementError}=await supabase.from('cash_movements').insert(rows);if(movementError)throw movementError;
+    }
+    return true;
   }catch(e:any){await queue('cash_session',session,session.id);return false;}
 }
 
@@ -151,11 +165,12 @@ export async function pushCurrencyToSupabase(_currency:Currency){return true;}
 
 export async function pushReturnToSupabase(item:ReturnItem):Promise<boolean>{
   try{
-    const supabase=await onlineClient();const {companyId,authUserId}=await getActiveTenant();const {data:sale}=await supabase.from('sales').select('warehouse_id').eq('id',item.transactionId).eq('company_id',companyId).maybeSingle();
-    const returnId=item.id;
-    const {error}=await supabase.from('sales_returns').upsert({id:returnId,company_id:companyId,sale_id:item.transactionId,status:item.status||'pending',reason:item.reason||'',total:Number(item.refundAmount)||0,created_by:authUserId,return_type:item.type||'refund',refund_status:item.refundStatus||'pending',refund_amount:Number(item.refundAmount)||0,refund_currency_code:item.refundCurrencyCode||null,refund_method:item.refundMethod||null},{onConflict:'id'});if(error)throw error;
-    const {error:ie}=await supabase.from('sales_return_items').upsert({id:item.id,return_id:returnId,sale_item_id:null,product_id:item.productId,quantity:Number(item.quantity)||0,unit_price:0,line_total:0,variant_id:null},{onConflict:'id'});if(ie)throw ie;
-    if(sale?.warehouse_id&&item.type==='refund'&&item.status==='completed'){const vid=await resolveVariantId(supabase,companyId,item.productId,item.variantLabel);const table=vid?'variant_stock_balances':'stock_balances';const filter=vid?{variant_id:vid}:{variant_id:null};await supabase.from(table).upsert({company_id:companyId,warehouse_id:sale.warehouse_id,product_id:item.productId,variant_id:vid,quantity:Number(item.quantity)||0,updated_at:new Date().toISOString()},{onConflict:'company_id,warehouse_id,product_id,variant_id'});await supabase.from('stock_movements').insert({id:crypto.randomUUID(),company_id:companyId,warehouse_id:sale.warehouse_id,product_id:item.productId,movement_type:'return',quantity:Number(item.quantity)||0,reference_type:'return',reference_id:returnId,created_by:authUserId,occurred_at:new Date().toISOString(),variant_id:vid});}
+    const supabase=await onlineClient();const {companyId}=await getActiveTenant();
+    if(item.status==='pending' || item.status==='approved'){
+      const {data,error}=await supabase.rpc('palmyra_create_return',{p_return_id:item.id,p_company_id:companyId,p_sale_id:item.transactionId,p_product_id:item.productId,p_quantity:Number(item.quantity)||0,p_reason:item.reason||'',p_amount:Number(item.refundAmount)||0,p_type:item.type||'refund'});
+      if(error)throw error;
+      return Boolean(data?.success);
+    }
     return true;
   }catch(e:any){await queue('return',item,item.id);return false;}
 }
@@ -169,7 +184,15 @@ export async function pushQuoteToSupabase(quote:Quote){
 }
 
 export async function pushBankTransactionToSupabase(tx:BankTransaction){
-  try{const supabase=await onlineClient();const {companyId,authUserId}=await getActiveTenant();const {error}=await supabase.from('bank_transactions').upsert({id:tx.id,company_id:companyId,bank_account_id:tx.cardId,transaction_type:tx.type,amount:Number(tx.amount)||0,currency_code:tx.currency||'USD',reference:tx.reference||null,note:tx.description||null,created_by:authUserId},{onConflict:'id'});if(error)throw error;return true;}catch(e:any){await queue('bank_transaction',tx,tx.id);return false;}
+  try{
+    const { callProcessBankTransactionRPC } = await import('./rpc');
+    const res=await callProcessBankTransactionRPC({
+      id:tx.id,cardId:tx.cardId,type:tx.type,amount:Number(tx.amount)||0,date:tx.date,
+      reference:tx.reference,description:tx.description,transactionId:tx.transactionId
+    });
+    if(!res.success)throw new Error(res.error||'No se pudo registrar el movimiento bancario.');
+    return true;
+  }catch(e:any){await queue('bank_transaction',tx,tx.id);return false;}
 }
 export async function deleteBankTransactionFromSupabase(id:string){try{const supabase=await onlineClient();const {companyId}=await getActiveTenant();const {error}=await supabase.from('bank_transactions').delete().eq('id',id).eq('company_id',companyId);if(error)throw error;}catch{}}
 
