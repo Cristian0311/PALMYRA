@@ -354,8 +354,9 @@ export const useStore = create<AppState>()(
     }
   },
   logout: () => {
-    void signOutSaaSAccount();
-    set({ currentUser: null, cart: [], activeSessionId: null });
+    set({ currentUser: null, cart: [], activeSessionId: null, currentBranchId: '' });
+    void signOutSaaSAccount().catch(() => {});
+    void import('../services/tenant').then(({ clearActiveTenant }) => clearActiveTenant()).catch(() => {});
   },
   clearAllData: async () => {
     // A full reset must never leave durable business operations behind.
@@ -397,7 +398,7 @@ export const useStore = create<AppState>()(
     // Clear local storage/IndexedDB cache.
     await clearLocalStateStorage().catch(() => {});
     try {
-      const protectedKeys = new Set(['pos_offline_sync_queue', 'mare_sales_backup_v1', 'mare_supabase_url', 'mare_supabase_anon_key', 'omnisync_device_id']);
+      const protectedKeys = new Set(['pos_offline_sync_queue', 'palmyra_supabase_url', 'palmyra_supabase_anon_key', 'palmyra-pos-device-id']);
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key && !protectedKeys.has(key)) localStorage.removeItem(key);
