@@ -306,8 +306,6 @@ export async function pullGlobalCatalogDataFromSupabase(): Promise<{ success: bo
         currencies: (currenciesRes.data || []).map((c:any) => ({
           code:c.code,name:c.name||c.code,symbol:c.symbol||c.code,rateToBase:Number(c.rate_to_base)||1,isBase:Boolean(c.is_base)
         })),
-          id:p.id,userId:p.user_id,productId:p.product_id,settlementPrice:Number(p.settlement_price)||0
-        })),
         settings: settingsRes.data || null
       }
     };
