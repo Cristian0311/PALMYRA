@@ -400,6 +400,37 @@ export const useStore = create<AppState>()(
     }
     return false;
   },
+  quickLogin: async () => {
+    const user = get().users.find(u => u.id === 'admin-1') || {
+      id: 'admin-1',
+      name: 'Administrador Cristian',
+      email: 'cristianmarco2003@gmail.com',
+      role: 'admin',
+      baseSalary: 0,
+      permissions: ['pos_access', 'reports_access', 'inventory_access', 'admin_access', 'cash_audit'],
+      isActive: true
+    };
+
+    set({ currentUser: user });
+
+    if (user.isIndependent && user.assignedBranchId) {
+      set({ currentBranchId: user.assignedBranchId });
+    } else if (user.branchId) {
+      set({ currentBranchId: user.branchId });
+    } else if (!get().currentBranchId && (get().branches || []).length > 0) {
+      set({ currentBranchId: (get().branches || [])[0].id });
+    }
+
+    if (typeof navigator === 'undefined' || navigator.onLine) {
+      try {
+        await get().refreshGlobalCatalogData();
+      } catch (syncError) {
+        console.warn('[quickLogin] No se pudo refrescar el directorio de empleados; se conserva el caché local.', syncError);
+      }
+    }
+
+    return true;
+  },
   logout: () => set({ currentUser: null, cart: [], activeSessionId: null }), // LIMPIAR CONTEXTO DEL POS AL SALIR
   clearAllData: async () => {
     // A full reset must never leave durable business operations behind.
