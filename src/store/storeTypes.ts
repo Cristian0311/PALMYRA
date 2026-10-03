@@ -1,7 +1,7 @@
 import {
   Branch, Category, Product, InventoryLevel, CartItem, Transaction, ReturnItem, Currency, Customer,
   CashRegisterSession, User, PendingOrder, SalarySettlement, InventoryTransfer, Warranty, CashMovement,
-  Supplier, SupplierOrder, InventoryAudit, FiscalConfig, DemandForecast, BankCard, BankTransaction, IDNSettlementPrice
+  Supplier, SupplierOrder, InventoryAudit, FiscalConfig, DemandForecast, BankCard, BankTransaction
 } from '../types';
 import type { SyncResult } from '../services/supabaseSync';
 
@@ -10,7 +10,6 @@ export interface AppState {
   users: User[];
   currentUser: User | null;
   login: (email: string, pass: string) => Promise<boolean>;
-  quickLogin: () => Promise<boolean>;
   logout: () => void;
   clearAllData: () => Promise<void>;
   clearReportsHistory: () => Promise<void>;
@@ -171,12 +170,6 @@ export interface AppState {
   updateReceiptConfig: (config: Partial<import('../types').ReceiptConfig>) => void;
 
   lastTurnNumber: number;
-
-  // IDN Settlement
-  idnSettlementPrices: IDNSettlementPrice[];
-  addIDNSettlementPrice: (price: IDNSettlementPrice) => void;
-  updateIDNSettlementPrice: (id: string, price: Partial<IDNSettlementPrice>) => void;
-  deleteIDNSettlementPrice: (id: string) => void;
 
   // Banks Module
   bankCards: import('../types').BankCard[];
