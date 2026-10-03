@@ -5,12 +5,13 @@ import { useStore } from "../store/useStore";
 import { motion } from "motion/react";
 
 export default function Login() {
-  const { login } = useStore(useShallow((state) => ({ login: state.login })));
+  const { login, quickLogin } = useStore(useShallow((state) => ({ login: state.login, quickLogin: state.quickLogin })));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isHovered, setIsHovered] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const quickLoginEnabled = import.meta.env.VITE_ENABLE_QUICK_LOGIN === "true";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,6 +99,26 @@ export default function Login() {
               )}
             </button>
           </form>
+
+          {quickLoginEnabled && (
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={async () => {
+                setError("");
+                setIsLoading(true);
+                try {
+                  const success = await quickLogin();
+                  if (!success) setError("No se pudo iniciar el acceso rápido.");
+                } finally {
+                  setIsLoading(false);
+                }
+              }}
+              className="w-full py-2.5 mt-3 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-70 disabled:cursor-not-allowed uppercase tracking-wider cursor-pointer"
+            >
+              {isLoading ? "Entrando..." : "Entrar directamente al CRM/POS"}
+            </button>
+          )}
         </div>
 
         {/* Branding Footer */}
