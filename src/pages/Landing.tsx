@@ -1,5 +1,5 @@
 import React from "react";
-import {ArrowRight,BarChart3,Boxes,Check,ChevronDown,ChevronRight,Cloud,CreditCard,Gauge,Menu,Package,ShieldCheck,ShoppingCart,WalletCards,X,Building2,Warehouse,UserRound,Network,Landmark,LockKeyhole,RefreshCw,CircleCheck,Command,Globe2,ScanLine,Layers3} from "lucide-react";
+import {ArrowRight,BarChart3,Boxes,Check,ChevronDown,ChevronRight,Cloud,CreditCard,Gauge,Menu,Package,ShieldCheck,ShoppingCart,WalletCards,Users,X,Building2,Warehouse,UserRound,Network,Landmark,LockKeyhole,RefreshCw,CircleCheck,Command,Globe2,ScanLine,Layers3} from "lucide-react";
 import {Link} from "react-router-dom";
 import {PALMYRA_PLANS} from "../config/saas";
 import "../styles/landing.css";
