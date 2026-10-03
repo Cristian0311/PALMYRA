@@ -6,7 +6,6 @@ import { loadSaaSContext, signInSaaSAccount } from '../services/saas';
 
 export default function Login() {
   const navigate = useNavigate();
-  const setSession = useStore((state) => state as any);
   const [email,setEmail]=React.useState('');
   const [password,setPassword]=React.useState('');
   const [loading,setLoading]=React.useState(false);
@@ -19,7 +18,7 @@ export default function Login() {
       if(error) throw error;
       const ctx=await loadSaaSContext();
       if(!ctx || !data.user) throw new Error('No se pudo cargar tu cuenta empresarial.');
-      setSession.setState({currentUser:ctx.user,currentBranchId:ctx.warehouseIds[0]||''});
+      useStore.setState({currentUser:ctx.user,currentBranchId:ctx.warehouseIds[0]||''});
       navigate(ctx.companyId?'/':'/onboarding',{replace:true});
     } catch(err:any) {
       setError(err?.message||'Correo o contraseña incorrectos.');
