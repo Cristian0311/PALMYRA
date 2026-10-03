@@ -208,29 +208,8 @@ export default function POS() {
   const handleCancelShift = async () => {
     if (!currentSession || isCancellingShift) return;
 
-    const worker = users.find(u =>
-      u.id === currentSession.userId ||
-      (u.name && currentSession.workerName && u.name.toLowerCase() === currentSession.workerName.toLowerCase())
-    );
-
-    const isAdminAuthorized =
-      currentUser?.role === 'admin' &&
-      !!currentUser.password &&
-      cancelShiftPassword === currentUser.password;
-
-    const isWorkerAuthorized =
-      currentUser?.role !== 'admin' &&
-      !!worker?.password &&
-      cancelShiftPassword === worker.password &&
-      worker.isActive !== false;
-
-    if (!isAdminAuthorized && !isWorkerAuthorized) {
-      setPosError(
-        currentUser?.role === 'admin'
-          ? "Contraseña de administrador incorrecta."
-          : `Debes ingresar la contraseña del trabajador del turno (${worker?.name || 'trabajador'}).`
-      );
-      setTimeout(() => setPosError(""), 3000);
+    if (currentUser?.role !== 'admin') {
+      setPosError("Esta acción requiere una cuenta administradora.");
       return;
     }
 
@@ -1904,23 +1883,13 @@ export default function POS() {
                       Abrir Nuevo Turno / Caja
                     </button>
 
-                    {currentUser?.role === 'admin' ? (
-                      <button 
-                        type="button"
-                        onClick={() => navigate('/')}
-                        className="w-full py-2 bg-slate-100 text-slate-600 rounded-xl font-black text-[8px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
-                      >
-                        Volver al Menú Principal
-                      </button>
-                    ) : (
-                      <button 
-                        type="button"
-                        onClick={() => logout()}
-                        className="w-full py-2 bg-slate-100 text-slate-600 rounded-xl font-black text-[8px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
-                      >
-                        Cerrar Sesión del Empleado
-                      </button>
-                    )}
+                    <button 
+                      type="button"
+                      onClick={() => navigate('/')}
+                      className="w-full py-2 bg-slate-100 text-slate-600 rounded-xl font-black text-[8px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
+                    >
+                      Volver al Menú Principal
+                    </button>
                   </div>
                 </div>
 
@@ -2067,23 +2036,13 @@ export default function POS() {
                         <div className="bg-red-50 text-red-600 p-4 rounded-xl text-xs font-bold">
                           No tienes sucursales asignadas.
                         </div>
-                        {currentUser?.role === 'admin' ? (
-                          <button 
-                            type="button"
-                            onClick={() => navigate('/')}
-                            className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
-                          >
-                            Volver al Menú
-                          </button>
-                        ) : (
-                          <button 
-                            type="button"
-                            onClick={() => logout()}
-                            className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
-                          >
-                            Cerrar Sesión
-                          </button>
-                        )}
+                        <button 
+                          type="button"
+                          onClick={() => navigate('/')}
+                          className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
+                        >
+                          Volver al Menú
+                        </button>
                       </div>
                     )}
                   </form>
@@ -3884,7 +3843,7 @@ export default function POS() {
                   <input 
                     type="password"
                     autoFocus
-                    placeholder="Contraseña del Trabajador"
+                    placeholder="Confirmación de administrador"
                     value={cancelShiftPassword}
                     onChange={(e) => setCancelShiftPassword(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleCancelShift()}
