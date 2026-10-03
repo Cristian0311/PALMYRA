@@ -1,878 +1,518 @@
 import { getSupabase } from '../../lib/supabase';
-import { useStore } from '../../store/useStore';
-import { normalizeSemanticText } from '../../utils/textUtils';
-import { 
-  Product, Category, Branch, InventoryLevel, User, 
-  BankCard, Customer, Currency, Transaction, CashRegisterSession,
+import { getActiveTenant } from '../tenant';
+import type {
+  Product, Category, Branch, InventoryLevel, User,
+  BankCard, Customer, Transaction, CashRegisterSession,
   Warranty, ReturnItem, InventoryTransfer,
   TimeShift, Quote, BankTransaction, SupplierOrder, InventoryAudit, SalarySettlement, Supplier,
-  ReceiptConfig, StoreConfig
 } from '../../types';
-import { fetchAllRows, safeUpsert, safeUpsertMany, SyncResult } from './core';
+import { fetchAllRows, type SyncResult } from './core';
+import { loadSaaSContext } from '../saas';
 
-function mapCashSessionFromRemote(s: any): CashRegisterSession {
-  let notes = s.notes || '';
-  let closingBalances = Array.isArray(s.closing_balances) ? s.closing_balances : [];
-  let closingDate = s.closing_date || undefined;
-  let movements = Array.isArray(s.movements) ? s.movements : [];
-  let auditStatus: CashRegisterSession['auditStatus'] | undefined = s.audit_status || undefined;
-  let auditNotes: string | undefined = s.audit_notes || undefined;
-
-  if (notes.includes('__META__:')) {
-    const parts = notes.split('__META__:');
-    notes = parts.shift()?.trim() || '';
-    try {
-      const meta = JSON.parse(parts.join('__META__:'));
-      if (Array.isArray(meta?.closing_balances)) closingBalances = meta.closing_balances;
-      if (meta?.closing_date) closingDate = meta.closing_date;
-      if (meta?.audit_status === 'pending_review' || meta?.audit_status === 'reviewed' || meta?.audit_status === 'resolved') {
-        auditStatus = meta.audit_status;
-      }
-      if (typeof meta?.audit_notes === 'string') auditNotes = meta.audit_notes;
-      const removedMovementIds = new Set(
-        Array.isArray(meta?.removed_movement_ids) ? meta.removed_movement_ids.map(String) : []
-      );
-      if (Array.isArray(meta?.movements)) {
-        movements = meta.movements.filter((movement: any) => movement?.id && !removedMovementIds.has(String(movement.id)));
-      }
-    } catch {
-      // Conservamos las notas base si la metadata estuviera dañada.
-    }
-  }
-
+function mapProduct(p:any, barcode?: string, kitComponents:any[] = []): Product {
   return {
-    id:s.id,
-    turnNumber:Number(s.turn_number)||undefined,
-    userId:s.user_id,
-    workerName:s.worker_name,
-    branchId:s.branch_id,
-    openedAt:s.opened_at,
-    closedAt:s.closed_at,
-    openingBalance:Number(s.opening_balance??s.opening_amount)||0,
-    openingAmount:Number(s.opening_amount??s.opening_balance)||0,
-    closingBalances,
-    status:s.status||'open',
-    notes,
-    closingDate,
-    workingEmployeeIds:Array.isArray(s.working_employee_ids)?s.working_employee_ids:[],
-    movements,
-    auditStatus,
-    auditNotes
+    id: p.id,
+    name: p.name,
+    sku: p.sku || '',
+    barcode: barcode || '',
+    costPrice: Number(p.cost) || 0,
+    price: Number(p.price) || 0,
+    margin: (Number(p.price) || 0) - (Number(p.cost) || 0),
+    categoryId: p.category_id || '',
+    color: p.device_color || 'bg-rose-50 text-rose-700',
+    commissionValue: Number(p.commission_fixed) || Number(p.commission_percent) || 0,
+    commissionType: Number(p.commission_percent) > 0 ? 'percentage' : 'fixed',
+    unit: p.base_unit || 'unidad',
+    status: p.status || 'active',
+    minStockAlert: Number(p.minimum_stock) || 0,
+    hasSerial: Boolean(p.track_serial),
+    warrantyDays: 0,
+    isKit: Boolean(p.is_kit),
+    kitItems: kitComponents,
+    kitComponents: kitComponents.map((k:any) => ({ productId: k.component_product_id, quantity: Number(k.quantity) || 0 })),
+    image: p.image_path || undefined,
   };
 }
-function normalizeTransactionItems(items: any[], products: Product[]): any[] {
-  const productById = new Map((products || []).map((p: Product) => [p.id, p]));
-  return (Array.isArray(items) ? items : []).map((raw: any, index: number) => {
-    if (!raw) return raw;
-    const rawProduct = raw.product;
-    const productId =
-      (typeof rawProduct === 'string' ? rawProduct : rawProduct?.id) ||
-      raw.product_id ||
-      raw.productId ||
-      rawProduct?.product_id;
-    const resolved = typeof rawProduct === 'object' && rawProduct?.id
-      ? rawProduct
-      : (productId ? productById.get(productId) : undefined);
-    const storedSnapshot =
-      raw.product_snapshot && typeof raw.product_snapshot === 'object'
-        ? raw.product_snapshot
-        : undefined;
-    const productSource = storedSnapshot || resolved || (typeof rawProduct === 'object' ? rawProduct : undefined);
-    const historicalName =
-      raw.product_name ||
-      raw.productName ||
-      productSource?.name ||
-      (productId ? productById.get(productId)?.name : undefined) ||
-      'Producto desconocido';
-    const historicalPrice = Number(
-      raw.price ??
-      raw.product_price ??
-      productSource?.price ??
-      (productId ? productById.get(productId)?.price : 0)
-    ) || 0;
-    const quantity = Number(raw.quantity) || 0;
-    const product = productSource
-      ? { ...productSource, id: productSource.id || productId, name: historicalName, price: historicalPrice }
-      : {
-          id: productId || ('unknown-' + index),
-          name: historicalName,
-          sku: raw.product_sku || '',
-          barcode: '',
-          costPrice: 0,
-          price: historicalPrice,
-          margin: 0,
-          categoryId: '',
-          color: 'bg-slate-100 text-slate-700',
-          commissionValue: 0,
-        };
+
+function mapBranch(w:any, index:number): Branch {
+  return {
+    id: w.id,
+    name: w.name,
+    isMain: w.code === 'ALM-01' || index === 0,
+    isActive: w.active !== false,
+  };
+}
+
+function mapUser(e:any, locations:any[], admin?:any): User {
+  const access = locations.filter((l:any) => l.employee_id === e.id);
+  const warehouseIds = access.map((l:any) => l.warehouse_id).filter(Boolean);
+  return {
+    id: e.id,
+    name: e.full_name,
+    email: '',
+    password: '',
+    role: 'employee',
+    baseSalary: Number(e.base_salary) || 0,
+    branchId: warehouseIds.find((id:string) => access.find((x:any) => x.warehouse_id === id)?.is_default) || warehouseIds[0],
+    allowedBranches: warehouseIds,
+    permissions: ['pos_access'],
+    isActive: e.active !== false,
+  };
+}
+
+function normalizeSaleItem(raw:any, productMap:Map<string,Product>, variantMap:Map<string,string>, saleId:string, idx:number): any {
+  const productId = raw.product_id;
+  const p = productMap.get(productId);
+  const variantLabel = raw.variant_id ? (variantMap.get(raw.variant_id) || undefined) : undefined;
+  const product = p || {
+    id: productId,
+    name: 'Producto',
+    sku: '',
+    barcode: '',
+    costPrice: 0,
+    price: Number(raw.unit_price) || 0,
+    margin: 0,
+    categoryId: '',
+    color: 'bg-rose-50 text-rose-700',
+    commissionValue: 0
+  };
+  return {
+    id: raw.id || `${saleId}-item-${idx}`,
+    product: { ...product, price: Number(raw.unit_price) || product.price },
+    quantity: Number(raw.quantity) || 0,
+    price: Number(raw.unit_price) || 0,
+    total: Number(raw.line_total) || (Number(raw.unit_price) || 0) * (Number(raw.quantity) || 0),
+    serialNumber: raw.serial_number || undefined,
+    variantLabel,
+  };
+}
+
+async function loadCatalog() {
+  const tenant = await getActiveTenant();
+  const supabase = getSupabase()!;
+
+  const [warehousesRes, categoriesRes, productsRes, employeesRes, accessRes, companyRes, catalogRes, variantsRes, barcodeRes, kitRes, currenciesRes] = await Promise.all([
+    supabase.from('warehouses').select('*').eq('company_id', tenant.companyId).eq('active', true).order('created_at', { ascending: true }),
+    supabase.from('categories').select('*').eq('company_id', tenant.companyId).eq('active', true).order('created_at', { ascending: true }),
+    supabase.from('products').select('*').eq('company_id', tenant.companyId).neq('status', 'archived').order('created_at', { ascending: true }),
+    supabase.from('employees').select('*').eq('company_id', tenant.companyId).eq('active', true).order('created_at', { ascending: true }),
+    supabase.from('employee_warehouse_access').select('*').eq('company_id', tenant.companyId),
+    supabase.from('companies').select('id,name,default_currency_code,timezone').eq('id', tenant.companyId).single(),
+    supabase.from('company_catalogs').select('*').eq('company_id', tenant.companyId).maybeSingle(),
+    supabase.from('product_variants').select('*').eq('company_id', tenant.companyId).eq('active', true),
+    supabase.from('product_barcodes').select('*').eq('company_id', tenant.companyId).eq('active', true),
+    supabase.from('product_kit_components').select('*').eq('company_id', tenant.companyId),
+    supabase.from('currencies').select('*').eq('active', true).order('code'),
+  ]);
+
+  const firstError = [warehousesRes,categoriesRes,productsRes,employeesRes,accessRes,companyRes,catalogRes,variantsRes,barcodeRes,kitRes,currenciesRes].find(r => r.error)?.error;
+  if (firstError) throw firstError;
+
+  const variantsByProduct = new Map<string, any[]>();
+  for (const v of variantsRes.data || []) {
+    const arr = variantsByProduct.get(v.product_id) || [];
+    arr.push(v);
+    variantsByProduct.set(v.product_id, arr);
+  }
+  const kitsByProduct = new Map<string, any[]>();
+  for (const k of kitRes.data || []) {
+    const arr = kitsByProduct.get(k.kit_product_id) || [];
+    arr.push(k);
+    kitsByProduct.set(k.kit_product_id, arr);
+  }
+  const productById = new Map<string, Product>();
+  const products = (productsRes.data || []).map((p:any) => {
+    const firstBarcode = (barcodeRes.data || []).find((b:any) => b.product_id === p.id)?.barcode || '';
+    const item = mapProduct(p, firstBarcode, kitsByProduct.get(p.id) || []);
+    productById.set(item.id, item);
+    return item;
+  });
+
+  const ctx = await loadSaaSContext();
+  const users: User[] = [
+    ...(ctx?.user && ctx.roleKey === 'admin' ? [{
+      ...ctx.user,
+      id: ctx.authUserId,
+      email: ctx.user.email || '',
+      role: 'admin' as const,
+      baseSalary: 0,
+      permissions: ['pos_access','reports_access','inventory_access','admin_access','cash_audit'],
+      isActive: true,
+    }] : []),
+    ...(employeesRes.data || []).map((e:any) => mapUser(e, accessRes.data || []))
+  ];
+
+  const branches = (warehousesRes.data || []).map(mapBranch);
+
+  const currencies = (currenciesRes.data || []).map((c:any) => ({
+    code: c.code,
+    name: c.name || c.code,
+    symbol: c.symbol || c.code,
+    rateToBase: c.code === (companyRes.data?.default_currency_code || 'USD') ? 1 : 1,
+    isBase: c.code === (companyRes.data?.default_currency_code || 'USD'),
+  }));
+
+  const settings = catalogRes.data || {};
+  const storeConfig = (settings.settings && settings.settings.storeConfig) || {
+    storeName: companyRes.data?.name || 'PALMYRA POS',
+    address: '',
+    phone: '',
+    receiptNotes: '',
+    darkMode: false,
+    manualOfflineSync: true
+  };
+  const receiptConfig = (settings.settings && settings.settings.receiptConfig) || {
+    showLogo: false, showAddress: true, showPhone: true, showFooter: true,
+    footerText: 'Gracias por su compra.',
+    businessName: companyRes.data?.name || 'PALMYRA POS',
+    businessAddress: '',
+    businessPhone: '',
+    printerWidth: '80mm',
+    autoPrint: false
+  };
+  const catalogConfig = {
+    themeColor: settings.theme_color || '#E11D73',
+    bannerText: settings.banner_text || '',
+    whatsappNumber: settings.whatsapp_number || '',
+    showPrices: settings.show_prices !== false,
+    visibleBranches: Array.isArray(settings.visible_warehouses) ? settings.visible_warehouses : branches.map((b:any)=>b.id),
+  };
+
+  return { tenant, warehouses: warehousesRes.data || [], branches, categories: categoriesRes.data || [], products, users, currencies, storeConfig, receiptConfig, catalogConfig };
+}
+
+async function loadInventory(branchId?: string) {
+  const tenant = await getActiveTenant();
+  const supabase = getSupabase()!;
+  let q = supabase.from('stock_balances').select('*').eq('company_id', tenant.companyId);
+  if (branchId) q = q.eq('warehouse_id', branchId);
+  const { data: baseRows, error: baseErr } = await q;
+  if (baseErr) throw baseErr;
+
+  let vq = supabase.from('variant_stock_balances').select('*,product_variants(name)').eq('company_id', tenant.companyId);
+  if (branchId) vq = vq.eq('warehouse_id', branchId);
+  const { data: variantRows, error: variantErr } = await vq;
+  if (variantErr) throw variantErr;
+
+  const productsRes = await supabase.from('products').select('id,minimum_stock').eq('company_id', tenant.companyId);
+  if (productsRes.error) throw productsRes.error;
+  const minByProduct = new Map<string, number>((productsRes.data || []).map((p:any) => [p.id, Number(p.minimum_stock) || 0]));
+
+  const inventory: InventoryLevel[] = [];
+  for (const r of baseRows || []) {
+    inventory.push({
+      id: `${r.warehouse_id}-${r.product_id}-base`,
+      productId: r.product_id,
+      branchId: r.warehouse_id,
+      quantity: Number(r.quantity) || 0,
+      minQuantity: minByProduct.get(r.product_id) || 0
+    });
+  }
+  for (const r of variantRows || []) {
+    inventory.push({
+      id: `${r.warehouse_id}-${r.product_id}-${r.variant_id}`,
+      productId: r.product_id,
+      branchId: r.warehouse_id,
+      variantLabel: r.product_variants?.name || r.variant_id,
+      quantity: Number(r.quantity) || 0,
+      minQuantity: minByProduct.get(r.product_id) || 0
+    });
+  }
+  return inventory;
+}
+
+async function loadSales(branchId?: string, limit = 500) {
+  const tenant = await getActiveTenant();
+  const supabase = getSupabase()!;
+  let salesQ = supabase.from('sales').select('*').eq('company_id', tenant.companyId).order('created_at', { ascending: false }).limit(limit);
+  if (branchId) salesQ = salesQ.eq('warehouse_id', branchId);
+  const { data: sales, error: salesErr } = await salesQ;
+  if (salesErr) throw salesErr;
+
+  const ids = (sales || []).map((s:any) => s.id);
+  if (!ids.length) return [] as Transaction[];
+
+  const [itemsRes, paymentsRes, productsRes, variantsRes] = await Promise.all([
+    supabase.from('sale_items').select('*').in('sale_id', ids),
+    supabase.from('payments').select('*').in('sale_id', ids),
+    supabase.from('products').select('*').eq('company_id', tenant.companyId),
+    supabase.from('product_variants').select('id,name').eq('company_id', tenant.companyId),
+  ]);
+  if (itemsRes.error) throw itemsRes.error;
+  if (paymentsRes.error) throw paymentsRes.error;
+  if (productsRes.error) throw productsRes.error;
+  if (variantsRes.error) throw variantsRes.error;
+
+  const barcodeRes = await supabase.from('product_barcodes').select('product_id,barcode').eq('company_id', tenant.companyId).eq('active', true);
+  const productMap = new Map<string,Product>();
+  for (const p of productsRes.data || []) productMap.set(p.id, mapProduct(p, (barcodeRes.data || []).find((b:any)=>b.product_id===p.id)?.barcode || ''));
+  const variantMap = new Map<string,string>((variantsRes.data || []).map((v:any)=>[v.id,v.name]));
+
+  const itemsBySale = new Map<string, any[]>();
+  for (const item of itemsRes.data || []) {
+    const arr = itemsBySale.get(item.sale_id) || [];
+    arr.push(item);
+    itemsBySale.set(item.sale_id, arr);
+  }
+  const paymentsBySale = new Map<string, any[]>();
+  for (const p of paymentsRes.data || []) {
+    const arr = paymentsBySale.get(p.sale_id) || [];
+    arr.push(p);
+    paymentsBySale.set(p.sale_id, arr);
+  }
+
+  const employeeNames = new Map<string,string>();
+  const employeesRes = await supabase.from('employees').select('id,full_name,user_id').eq('company_id',tenant.companyId);
+  for (const e of employeesRes.data || []) employeeNames.set(e.id,e.full_name);
+
+  return (sales || []).map((s:any) => {
+    const itemRows = itemsBySale.get(s.id) || [];
+    const pRows = paymentsBySale.get(s.id) || [];
+    const payments = pRows.map((p:any) => ({
+      method: p.method || 'cash',
+      amount: Number(p.amount) || 0,
+      currencyCode: p.currency_code || 'USD',
+      exchangeRate: Number(p.exchange_rate) || 1,
+      bankCardId: undefined
+    }));
+    const userId = s.employee_id || s.seller_user_id || '';
     return {
-      id: raw.id || ((productId || 'item') + '-' + index),
-      product,
-      quantity,
-      price: historicalPrice,
-      total: Number(raw.total) || historicalPrice * quantity,
-      serialNumber: raw.serialNumber || raw.serial_number || undefined,
-      warrantyCode: raw.warrantyCode || raw.warranty_code || undefined,
-      selectedSize: raw.selectedSize || raw.selected_size || undefined,
-      selectedColor: raw.selectedColor || raw.selected_color || undefined,
-      variantLabel: raw.variantLabel || raw.variant_label || undefined
-    };
+      id: s.id,
+      branchId: s.warehouse_id,
+      userId,
+      cashierName: employeeNames.get(s.employee_id) || undefined,
+      date: s.created_at,
+      subtotal: Number(s.total) || 0,
+      tax: 0,
+      discount: 0,
+      total: Number(s.total) || 0,
+      payments,
+      items: itemRows.map((it:any,i:number)=>normalizeSaleItem(it,productMap,variantMap,s.id,i)),
+      status: s.status === 'refunded' ? 'refunded' : 'completed',
+      customerId: s.customer_id || undefined,
+      sessionId: s.cash_session_id || undefined,
+      notes: s.notes || '',
+      paymentMethod: payments[0]?.method || 'cash',
+    } as Transaction;
   });
 }
 
+async function loadCashSessions(branchId?: string) {
+  const tenant = await getActiveTenant();
+  const supabase = getSupabase()!;
+  const [registersRes, employeesRes] = await Promise.all([
+    supabase.from('cash_registers').select('*').eq('company_id',tenant.companyId).eq('active',true),
+    supabase.from('employees').select('id,full_name').eq('company_id',tenant.companyId)
+  ]);
+  if (registersRes.error) throw registersRes.error;
+  if (employeesRes.error) throw employeesRes.error;
+  const registerMap = new Map<string,any>((registersRes.data || []).map((r:any)=>[r.id,r]));
+  const employeeMap = new Map<string,string>((employeesRes.data || []).map((e:any)=>[e.id,e.full_name]));
 
-export async function pullBranchInventoryFromSupabase(branchId?: string): Promise<{ success: boolean; inventory: InventoryLevel[]; message?: string }> {
-  const supabase = getSupabase();
-  if (!supabase) return { success: false, inventory: [], message: 'Supabase no configurado' };
+  let q=supabase.from('cash_sessions').select('*').eq('company_id',tenant.companyId).order('opened_at',{ascending:false}).limit(50);
+  const { data, error }=await q;
+  if(error) throw error;
+  return (data||[]).filter((s:any)=>{
+    const reg=registerMap.get(s.cash_register_id);
+    return !branchId || reg?.warehouse_id===branchId;
+  }).map((s:any):CashRegisterSession=>({
+    id:s.id,
+    turnNumber:Number(s.turn_number)||undefined,
+    branchId:registerMap.get(s.cash_register_id)?.warehouse_id || '',
+    openedAt:s.opened_at,
+    closedAt:s.closed_at || undefined,
+    openingBalance:Number(s.opening_amount)||0,
+    openingAmount:Number(s.opening_amount)||0,
+    expectedBalance:Number(s.expected_cash)||undefined,
+    status:s.status || 'open',
+    userId:s.employee_id || s.opened_by || '',
+    workerName:employeeMap.get(s.employee_id) || undefined,
+    workingEmployeeIds:s.employee_id ? [s.employee_id] : [],
+    closingBalances: s.physical_cash == null ? [] : [{method:'cash',amount:Number(s.physical_cash)||0,currencyCode:'USD',exchangeRate:1}],
+  }));
+}
+
+async function loadTransfers(branchId?: string) {
+  const tenant=await getActiveTenant();
+  const supabase=getSupabase()!;
+  let q=supabase.from('transfers').select('*').eq('company_id',tenant.companyId).order('created_at',{ascending:false}).limit(500);
+  if(branchId) q=q.or(`origin_warehouse_id.eq.${branchId},destination_warehouse_id.eq.${branchId}`);
+  const {data,error}=await q;if(error)throw error;
+  const ids=(data||[]).map((t:any)=>t.id);
+  if(!ids.length)return [] as InventoryTransfer[];
+  const [itemsRes,productsRes,warehousesRes]=await Promise.all([
+    supabase.from('transfer_items').select('*').in('transfer_id',ids),
+    supabase.from('products').select('id,name').eq('company_id',tenant.companyId),
+    supabase.from('warehouses').select('id,name').eq('company_id',tenant.companyId)
+  ]);
+  if(itemsRes.error)throw itemsRes.error;if(productsRes.error)throw productsRes.error;if(warehousesRes.error)throw warehousesRes.error;
+  const pMap=new Map<string,string>((productsRes.data||[]).map((p:any)=>[p.id,p.name]));
+  const wMap=new Map<string,string>((warehousesRes.data||[]).map((w:any)=>[w.id,w.name]));
+  const rows:InventoryTransfer[]=[];
+  for(const t of data||[]){
+    const tis=(itemsRes.data||[]).filter((i:any)=>i.transfer_id===t.id);
+    for(const i of tis){
+      rows.push({
+        id:i.id,operationId:t.id,productId:i.product_id,productName:pMap.get(i.product_id)||'Producto',
+        fromBranchId:t.origin_warehouse_id,fromBranchName:wMap.get(t.origin_warehouse_id)||'Origen',
+        toBranchId:t.destination_warehouse_id,toBranchName:wMap.get(t.destination_warehouse_id)||'Destino',
+        variantLabel:i.variant_id||undefined,quantity:Number(i.quantity)||0,variants:[],
+        date:t.created_at,userId:t.created_by||'',status:t.status||'completed'
+      });
+    }
+  }
+  return rows;
+}
+
+async function loadCustomers() {
+  const tenant=await getActiveTenant(); const supabase=getSupabase()!;
+  const {data,error}=await supabase.from('customers').select('*').eq('company_id',tenant.companyId).eq('active',true).order('name').limit(5000);
+  if(error)throw error;
+  return (data||[]).map((c:any):Customer=>({id:c.id,name:c.name||'',email:c.email||'',phone:c.phone||'',taxId:c.tax_id||''}));
+}
+async function loadBanks() {
+  const tenant=await getActiveTenant(); const supabase=getSupabase()!;
+  const [a,t]=await Promise.all([
+    supabase.from('bank_accounts').select('*').eq('company_id',tenant.companyId).eq('active',true).order('created_at',{ascending:false}),
+    supabase.from('bank_transactions').select('*').eq('company_id',tenant.companyId).order('created_at',{ascending:false}).limit(1000)
+  ]);
+  if(a.error)throw a.error;if(t.error)throw t.error;
+  return {
+    bankCards:(a.data||[]).map((x:any):BankCard=>({id:x.id,name:x.name,bank:x.bank_name,bankName:x.bank_name,cardHolder:'',lastFour:x.last_four,lastFourDigits:x.last_four,balance:Number(x.balance)||0,currency:x.currency_code||'USD',isActive:x.active!==false})),
+    bankTransactions:(t.data||[]).map((x:any):BankTransaction=>({id:x.id,cardId:x.bank_account_id,type:x.transaction_type,amount:Number(x.amount)||0,date:x.created_at,reference:x.reference||'',description:x.note||'',transactionId:x.reference_id||undefined}))
+  };
+}
+async function loadSuppliersOrders() {
+  const tenant=await getActiveTenant(); const supabase=getSupabase()!;
+  const [s,o,i]=await Promise.all([
+    supabase.from('suppliers').select('*').eq('company_id',tenant.companyId).eq('active',true).order('name'),
+    supabase.from('purchase_orders').select('*').eq('company_id',tenant.companyId).order('created_at',{ascending:false}).limit(1000),
+    supabase.from('purchase_items').select('*')
+  ]);
+  if(s.error)throw s.error;if(o.error)throw o.error;if(i.error)throw i.error;
+  const pIds=(o.data||[]).map((x:any)=>x.id);
+  const productsRes=await supabase.from('products').select('id,name').eq('company_id',tenant.companyId); if(productsRes.error)throw productsRes.error;
+  const pMap=new Map<string,string>((productsRes.data||[]).map((p:any)=>[p.id,p.name]));
+  const supplierMap=new Map<string,string>((s.data||[]).map((x:any)=>[x.id,x.name]));
+  return {
+    suppliers:(s.data||[]).map((x:any):Supplier=>({id:x.id,name:x.name||'',phone:x.phone||'',address:x.address||'',email:x.email||'',rating:Number(x.rating)||0,typeOfMerchandise:x.merchandise_type||''})),
+    supplierOrders:(o.data||[]).map((x:any):SupplierOrder=>({
+      id:x.id,supplierId:x.supplier_id,date:x.created_at,expectedDeliveryDate:x.expected_delivery_date||undefined,
+      branchId:x.warehouse_id,total:Number(x.total)||0,status:x.status||'pending',transportDetails:x.transport_details||undefined,transportCost:Number(x.transport_cost)||0,
+      items:(i.data||[]).filter((it:any)=>it.purchase_order_id===x.id).map((it:any)=>({productId:it.product_id,productName:pMap.get(it.product_id)||'Producto',quantity:Number(it.quantity)||0,cost:Number(it.unit_cost)||0}))
+    }))
+  };
+}
+
+async function loadReturnsWarrantiesQuotesTimePayroll() {
+  const tenant=await getActiveTenant(); const supabase=getSupabase()!;
+  const [rr,ri,w,qs,qi,ts,pr,pi,aa,ai]=await Promise.all([
+    supabase.from('sales_returns').select('*').eq('company_id',tenant.companyId).order('created_at',{ascending:false}).limit(1000),
+    supabase.from('sales_return_items').select('*'),
+    supabase.from('warranties').select('*').eq('company_id',tenant.companyId).order('created_at',{ascending:false}).limit(1000),
+    supabase.from('quotes').select('*').eq('company_id',tenant.companyId).order('created_at',{ascending:false}).limit(1000),
+    supabase.from('quote_items').select('*'),
+    supabase.from('employee_time_shifts').select('*').eq('company_id',tenant.companyId).order('clock_in',{ascending:false}).limit(1000),
+    supabase.from('payroll_runs').select('*').eq('company_id',tenant.companyId).order('created_at',{ascending:false}).limit(500),
+    supabase.from('payroll_items').select('*').eq('company_id',tenant.companyId),
+    supabase.from('inventory_audits').select('*').eq('company_id',tenant.companyId).order('created_at',{ascending:false}).limit(500),
+    supabase.from('inventory_audit_items').select('*'),
+  ]);
+  for(const x of [rr,ri,w,qs,qi,ts,pr,pi,aa,ai])if(x.error)throw x.error;
+  const productRes=await supabase.from('products').select('id,name').eq('company_id',tenant.companyId);if(productRes.error)throw productRes.error;
+  const customerRes=await supabase.from('customers').select('id,name').eq('company_id',tenant.companyId);if(customerRes.error)throw customerRes.error;
+  const employeeRes=await supabase.from('employees').select('id,full_name').eq('company_id',tenant.companyId);if(employeeRes.error)throw employeeRes.error;
+  const pMap=new Map<string,string>((productRes.data||[]).map((p:any)=>[p.id,p.name]));
+  const eMap=new Map<string,string>((employeeRes.data||[]).map((e:any)=>[e.id,e.full_name]));
+  const cMap=new Map<string,string>((customerRes.data||[]).map((c:any)=>[c.id,c.name]));
+  const returns:ReturnItem[]=[];
+  for(const r of rr.data||[]) for(const item of (ri.data||[]).filter((x:any)=>x.return_id===r.id)){
+    returns.push({id:item.id,transactionId:r.sale_id,productId:item.product_id,quantity:Number(item.quantity)||0,reason:r.reason||'',date:r.created_at,status:r.status||'pending',type:r.return_type||'refund',notes:r.reason||'',branchId:undefined,processedBy:r.created_by,refundStatus:r.refund_status||'not_required',refundAmount:Number(r.refund_amount)||0,refundCurrencyCode:r.refund_currency_code||undefined,refundMethod:r.refund_method||undefined});
+  }
+  const warranties:Warranty[]=(w.data||[]).map((x:any)=>({id:x.id,productId:'',productName:'',transactionId:'',purchaseDate:x.starts_at,expiryDate:x.expires_at,status:x.status||'active'}));
+  const quotes:Quote[]=(qs.data||[]).map((x:any):Quote=>({id:x.id,branchId:x.warehouse_id,userId:x.created_by||'',customerId:x.customer_id||undefined,date:x.created_at,subtotal:Number(x.total)||0,tax:0,total:Number(x.total)||0,status:x.status==='converted'?'converted':x.status==='expired'?'expired':'pending',notes:x.notes||'',items:(qi.data||[]).filter((it:any)=>it.quote_id===x.id).map((it:any)=>({id:it.id,product:{id:it.product_id,name:pMap.get(it.product_id)||'Producto',sku:'',costPrice:0,price:Number(it.unit_price)||0,margin:0,categoryId:'',color:'bg-rose-50 text-rose-700',commissionValue:0},quantity:Number(it.quantity)||0,price:Number(it.unit_price)||0,total:Number(it.line_total)||0}))}));
+  const timeShifts:TimeShift[]=(ts.data||[]).map((x:any)=>({id:x.id,userId:x.employee_id,clockIn:x.clock_in,clockOut:x.clock_out||undefined,notes:x.notes||undefined}));
+  const salarySettlements:SalarySettlement[]=(pi.data||[]).map((x:any)=>({id:x.id,userId:x.employee_id,userName:eMap.get(x.employee_id)||'Empleado',sessionId:'',baseSalary:Number(x.base_salary)||0,commissions:Number(x.commission_amount)||0,total:Number(x.total_amount)||0,date:(pr.data||[]).find((run:any)=>run.id===x.payroll_run_id)?.created_at||new Date().toISOString(),status:(pr.data||[]).find((run:any)=>run.id===x.payroll_run_id)?.status==='paid'?'paid':'pending'}));
+  const audits:InventoryAudit[]=(aa.data||[]).map((x:any)=>({id:x.id,date:x.created_at,branchId:x.warehouse_id,userId:x.created_by,status:x.status==='approved'?'completed':'pending',mode:'cycle_count',blindCount:Boolean(x.blind_count),submittedAt:x.submitted_at,reviewedBy:x.reviewed_by,reviewedAt:x.reviewed_at,notes:x.notes||'',items:(ai.data||[]).filter((it:any)=>it.audit_id===x.id).map((it:any)=>({productId:it.product_id,productName:pMap.get(it.product_id)||'Producto',expected:Number(it.expected_quantity)||0,counted:Number(it.counted_quantity),difference:Number(it.difference)||0}))}));
+  return {returns,warranties,quotes,timeShifts,salarySettlements,audits};
+}
+
+async function loadAllData(branchId?:string) {
+  const catalog=await loadCatalog();
+  const [inventory,transactions,cashSessions,transfers,customers,banks,extras,suppliersOrders]=await Promise.all([
+    loadInventory(),
+    loadSales(undefined,1000),
+    loadCashSessions(),
+    loadTransfers(),
+    loadCustomers(),
+    loadBanks(),
+    loadReturnsWarrantiesQuotesTimePayroll(),
+    loadSuppliersOrders()
+  ]);
+  const lastTurnNumber = cashSessions.reduce((m:number,s:any)=>Math.max(m,Number(s.turnNumber)||0),0);
+  return {
+    products:catalog.products,categories:catalog.categories,inventory,branches:catalog.branches,users:catalog.users,
+    currencies:catalog.currencies,customers,bankCards:banks.bankCards,bankTransactions:banks.bankTransactions,
+    transactions,cashSessions,transfers,warranties:extras.warranties,returns:extras.returns,quotes:extras.quotes,
+    timeShifts:extras.timeShifts,salarySettlements:extras.salarySettlements,inventoryAudits:extras.audits,
+    suppliers:suppliersOrders.suppliers,supplierOrders:suppliersOrders.supplierOrders,
+    receiptConfig:catalog.receiptConfig,storeConfig:catalog.storeConfig,catalogConfig:catalog.catalogConfig,lastTurnNumber
+  };
+}
+
+export async function pullBranchInventoryFromSupabase(branchId?: string) {
+  try { return { success:true, inventory:await loadInventory(branchId) }; }
+  catch(e:any){ return {success:false,inventory:[],message:e?.message||'No se pudo actualizar el inventario'}; }
+}
+
+export async function pullTransferHistoryFromSupabase() {
+  try { return {success:true,transfers:await loadTransfers()}; }
+  catch(e:any){ return {success:false,transfers:[],message:e?.message||'No se pudo actualizar el historial de transferencias'}; }
+}
+
+export async function pullBankDataFromSupabase() {
+  try { return {success:true,...await loadBanks()}; }
+  catch(e:any){ return {success:false,bankCards:[],bankTransactions:[],message:e?.message||'No se pudieron actualizar las cuentas bancarias'}; }
+}
+
+export async function pullBranchOperationalDataFromSupabase(branchId:string, options?:{sessionId?:string;transactionLimit?:number;transferLimit?:number}) {
   try {
-    let query = supabase.from('inventory').select('*');
-    if (branchId) query = query.eq('branch_id', branchId);
-    const { data, error } = await query;
-    if (error) throw error;
-    const inventory: InventoryLevel[] = (data || []).map((i: any) => ({
-      id: i.id,
-      productId: i.product_id,
-      branchId: i.branch_id,
-      variantLabel: i.variant_label || undefined,
-      quantity: Number(i.quantity) || 0,
-      minQuantity: Number(i.min_quantity) || 0
-    }));
-    return { success: true, inventory };
-  } catch (e: any) {
-    return { success: false, inventory: [], message: e?.message || 'No se pudo actualizar el inventario' };
+    const transactions=await loadSales(branchId,options?.transactionLimit||250);
+    const cashSessions=(await loadCashSessions(branchId)).filter((s:any)=>!options?.sessionId || s.id===options.sessionId);
+    const inventory=await loadInventory(branchId);
+    const transfers=await loadTransfers(branchId);
+    return {success:true,transactions,cashSessions,inventory,transfers};
+  } catch(e:any){
+    return {success:false,transactions:[],cashSessions:[],inventory:[],transfers:[],message:e?.message||'No se pudieron actualizar los datos operativos'};
   }
 }
 
-export async function pullTransferHistoryFromSupabase(): Promise<{ success: boolean; transfers: InventoryTransfer[]; message?: string }> {
-  const supabase = getSupabase();
-  if (!supabase) return { success: false, transfers: [], message: 'Supabase no configurado' };
+export async function pullGlobalCatalogDataFromSupabase() {
   try {
-    const data = await fetchAllRows(supabase, 'inventory_transfers', 'date');
-    return {
-      success: true,
-      transfers: (data || []).map((t: any): InventoryTransfer => ({
-        id: t.id,
-        operationId: t.operation_id || t.id,
-        productId: t.product_id,
-        productName: t.product_name || 'Producto',
-        fromBranchId: t.from_branch_id,
-        fromBranchName: t.from_branch_name || 'Sucursal Origen',
-        toBranchId: t.to_branch_id,
-        toBranchName: t.to_branch_name || 'Sucursal Destino',
-        variantLabel: t.variant_label || 'Producto Base',
-        quantity: Number(t.quantity) || 0,
-        variants: Array.isArray(t.variants) ? t.variants.map((v: any) => ({
-          variantLabel: String(v?.variantLabel ?? v?.variant_label ?? '').trim(),
-          quantity: Number(v?.quantity) || 0
-        })) : [],
-        date: t.date,
-        userId: t.user_id,
-        status: t.status || 'completed',
-        batchId: t.batch_id || undefined
-      }))
-    };
-  } catch (e: any) {
-    return { success: false, transfers: [], message: e?.message || 'No se pudo actualizar el historial de transferencias' };
-  }
+    const c=await loadCatalog();
+    return {success:true,data:{branches:c.branches,categories:c.categories,products:c.products,users:c.users,currencies:c.currencies,receiptConfig:c.receiptConfig,storeConfig:c.storeConfig,catalogConfig:c.catalogConfig}};
+  } catch(e:any){ return {success:false,message:e?.message||'No se pudo actualizar el catálogo remoto'}; }
 }
 
-export async function pullBankDataFromSupabase(): Promise<{ success: boolean; bankCards: BankCard[]; bankTransactions: BankTransaction[]; message?: string }> {
-  const supabase = getSupabase();
-  if (!supabase) return { success: false, bankCards: [], bankTransactions: [], message: 'Supabase no configurado' };
-  try {
-    const [cardsRes, txData] = await Promise.all([
-      supabase.from('bank_cards').select('*'),
-      supabase.from('bank_transactions').select('*').order('date', { ascending: false }).limit(250)
-    ]);
-    if (cardsRes.error) throw cardsRes.error;
-    return {
-      success: true,
-      bankCards: (cardsRes.data || []).map((bc: any): BankCard => ({
-        id: bc.id,
-        name: bc.name || bc.card_holder || bc.bank_name || 'Tarjeta Bancaria',
-        bank: bc.bank || bc.bank_name || 'Banco',
-        bankName: bc.bank_name || bc.bank || 'Banco',
-        cardHolder: bc.card_holder || bc.name || 'Titular',
-        accountNumber: bc.account_number || bc.last_four_digits || '',
-        lastFour: bc.last_four || bc.last_four_digits || (bc.account_number ? String(bc.account_number).slice(-4) : ''),
-        lastFourDigits: bc.last_four_digits || bc.last_four || (bc.account_number ? String(bc.account_number).slice(-4) : ''),
-        phone: bc.phone || '',
-        currency: bc.currency || 'CUP',
-        balance: Number(bc.balance) || 0,
-        color: bc.color || 'from-blue-600 to-indigo-800',
-        isActive: bc.is_active !== false
-      })),
-      bankTransactions: (txData || []).map((bt: any): BankTransaction => ({
-        id: bt.id,
-        cardId: bt.card_id || bt.cardId,
-        type: bt.type,
-        amount: Number(bt.amount) || 0,
-        date: bt.date,
-        reference: bt.reference || '',
-        description: bt.description || '',
-        transactionId: bt.transaction_id || bt.transactionId
-      }))
-    };
-  } catch (e: any) {
-    return { success: false, bankCards: [], bankTransactions: [], message: e?.message || 'No se pudieron actualizar las cuentas bancarias' };
-  }
+export async function pullPosBootstrapFromSupabase(branchId?:string) {
+  try { return {success:true,data:await loadAllData(branchId)}; }
+  catch(e:any){ return {success:false,data:null,message:e?.message||'No se pudo cargar PALMYRA'}; }
 }
 
-
-export async function pullBranchOperationalDataFromSupabase(branchId: string, options?: { sessionId?: string; transactionLimit?: number; transferLimit?: number }): Promise<{ success: boolean; transactions: Transaction[]; cashSessions: CashRegisterSession[]; inventory: InventoryLevel[]; transfers: InventoryTransfer[]; message?: string }> {
-  const supabase = getSupabase();
-  if (!supabase) return { success: false, transactions: [], cashSessions: [], inventory: [], transfers: [], message: 'Supabase no configurado' };
+export async function pullAllFromSupabase():Promise<{data:any;result:SyncResult}> {
   try {
-    const [txRes, sessionsRes, invRes, transferRes] = await Promise.all([
-      (() => { let q = supabase.from('transactions').select('*').eq('branch_id', branchId).order('created_at', { ascending: false }).limit(options?.transactionLimit ?? 250); if (options?.sessionId) q = q.eq('session_id', options.sessionId); return q; })(),
-      supabase.from('cash_sessions').select('*').eq('branch_id', branchId).order('opened_at', { ascending: false }).limit(20),
-      supabase.from('inventory').select('*').eq('branch_id', branchId),
-      supabase.from('inventory_transfers').select('*')
-        .or(`from_branch_id.eq.${branchId},to_branch_id.eq.${branchId}`)
-        .order('date', { ascending: false }).limit(options?.transferLimit ?? 500)
-    ]);
-    const firstError = [txRes, sessionsRes, invRes, transferRes].find(r => r.error)?.error;
-    if (firstError) throw firstError;
-    const catalogProducts = useStore.getState().products || [];
-    const transactions: Transaction[] = (txRes.data || []).map((t:any) => ({
-      id:t.id,date:t.date,total:Number(t.total)||0,tax:Number(t.tax)||0,discount:Number(t.discount)||0,
-      branchId:t.branch_id,customerId:t.customer_id,userId:t.user_id,status:t.status||'completed',
-      ncf:t.ncf||undefined,ncfType:t.ncf_type||undefined,
-      notes:t.notes||'',paymentMethod:t.payment_method||'cash',sessionId:t.session_id,
-      changeGiven:Number(t.change_given)||0,items:normalizeTransactionItems(t.items, catalogProducts),
-      payments:Array.isArray(t.payments)?t.payments:[],changePayments:Array.isArray(t.change_payments)?t.change_payments:[],
-      sellerEmployeeIds:Array.isArray(t.seller_employee_ids)?t.seller_employee_ids:[],
-      deletedAt:t.deleted_at||undefined,deletedBy:t.deleted_by||undefined,deleteReason:t.delete_reason||undefined
-    }));
-    const cashSessions: CashRegisterSession[] = (sessionsRes.data || []).map(mapCashSessionFromRemote);
-    const inventory: InventoryLevel[] = (invRes.data || []).map((i:any) => ({
-      id:i.id,productId:i.product_id,branchId:i.branch_id,variantLabel:i.variant_label||undefined,
-      quantity:Number(i.quantity)||0,minQuantity:Number(i.min_quantity)||0
-    }));
-    const transfers: InventoryTransfer[] = (transferRes.data || []).map((t:any) => ({
-      id:t.id,operationId:t.operation_id||t.id,productId:t.product_id,productName:t.product_name||'Producto',
-      fromBranchId:t.from_branch_id,fromBranchName:t.from_branch_name||'Sucursal Origen',
-      toBranchId:t.to_branch_id,toBranchName:t.to_branch_name||'Sucursal Destino',
-      variantLabel:t.variant_label||'Producto Base',quantity:Number(t.quantity)||0,
-      variants:Array.isArray(t.variants)?t.variants:[],date:t.date,userId:t.user_id,status:t.status||'completed',batchId:t.batch_id||undefined
-    }));
-    return { success:true, transactions, cashSessions, inventory, transfers };
-  } catch (e:any) {
-    return { success:false, transactions:[], cashSessions:[], inventory:[], transfers:[], message:e?.message||'No se pudieron actualizar los datos operativos' };
+    const data=await loadAllData();
+    const result:SyncResult={
+      success:true,message:'Datos de PALMYRA cargados desde la empresa activa.',
+      counts:{
+        products:data.products.length,categories:data.categories.length,inventory:data.inventory.length,
+        branches:data.branches.length,users:data.users.length,bankCards:data.bankCards.length,
+        customers:data.customers.length,currencies:data.currencies.length,transactions:data.transactions.length,
+        cashSessions:data.cashSessions.length
+      }
+    };
+    return {data,result};
+  } catch(e:any){
+    return {data:null,result:{success:false,message:e?.message||'Error al sincronizar PALMYRA',errors:[e?.message||String(e)]}};
   }
 }
-
-export async function pullGlobalCatalogDataFromSupabase(): Promise<{ success: boolean; data?: any; message?: string }> {
-  const supabase = getSupabase();
-  if (!supabase) return { success: false, message: 'Supabase no configurado' };
-  try {
-    const [branchesRes, categoriesRes, productsRes, usersRes, currenciesRes, settingsRes] = await Promise.all([
-      supabase.from('branches').select('*'),
-      supabase.from('categories').select('*'),
-      supabase.from('products').select('*').eq('status', 'active'),
-      supabase.from('users').select('*').eq('is_active', true),
-      supabase.from('currencies').select('*'),
-      supabase.from('settings').select('*').eq('id', 'global').maybeSingle()
-    ]);
-    const firstError = [branchesRes, categoriesRes, productsRes, usersRes, currenciesRes].find(r => r.error)?.error;
-    if (firstError) throw firstError;
-
-    return {
-      success: true,
-      data: {
-        branches: (branchesRes.data || []).map((b:any) => ({ id:b.id, name:b.name, address:b.address, phone:b.phone, isMain:b.is_main, isActive:b.is_active !== false })),
-        categories: (categoriesRes.data || []).map((c:any) => ({ id:c.id, name:c.name, department:c.department || '', color:c.color })),
-        products: (productsRes.data || []).map((p:any) => ({
-          id:p.id,name:p.name,sku:p.sku||'',barcode:p.barcode||'',
-          costPrice:Number(p.cost_price)||0,price:Number(p.price)||0,
-          margin:Number(p.margin)||0,categoryId:p.category_id||'',
-          color:p.color||'bg-slate-100 text-slate-700',
-          commissionType:p.commission_type||'percentage',
-          commissionValue:Number(p.commission_value)||0,unit:p.unit||'unidad',
-          status:p.status||'active',minStockAlert:Number(p.min_stock_alert)||5,
-          hasSerial:Boolean(p.has_serial),warrantyDays:Number(p.warranty_days)||0,
-          isKit:Boolean(p.is_kit),kitItems:Array.isArray(p.kit_items)?p.kit_items:[],
-          kitComponents:Array.isArray(p.kit_components)?p.kit_components:(Array.isArray(p.kit_items)?p.kit_items:[]),
-          deviceColor:p.device_color||'',availableSizes:Array.isArray(p.available_sizes)?p.available_sizes:[],
-          availableColors:Array.isArray(p.available_colors)?p.available_colors:[]
-        })),
-        users: (usersRes.data || []).map((u:any) => ({
-          id:u.id,name:u.name,email:u.email||'',password:u.password||'',
-          role:u.role||'employee',commissionRate:Number(u.commission_rate)||0,
-          baseSalary:Number(u.base_salary)||0,salesGoal:Number(u.sales_goal)||0,
-          branchId:u.branch_id||undefined,allowedBranches:Array.isArray(u.allowed_branches)?u.allowed_branches:undefined,
-          permissions:Array.isArray(u.permissions)?u.permissions:undefined,isActive:u.is_active!==false,
-        })),
-        currencies: (currenciesRes.data || []).map((c:any) => ({
-          code:c.code,name:c.name||c.code,symbol:c.symbol||c.code,rateToBase:Number(c.rate_to_base)||1,isBase:Boolean(c.is_base)
-        })),
-        settings: settingsRes.data || null
-      }
-    };
-  } catch (e:any) {
-    return { success: false, message: e?.message || 'No se pudo actualizar el catálogo remoto' };
-  }
-}
-
-export async function pullPosBootstrapFromSupabase(branchId?: string): Promise<{ success: boolean; data: any; message?: string }> {
-  const supabase = getSupabase();
-  if (!supabase) return { success: false, data: null, message: 'Supabase no configurado' };
-  try {
-    const [branchesRes, categoriesRes, productsRes, inventoryRes, usersRes, customersRes, currenciesRes, txRes, sessionsRes, settingsRes, transferRes, bankCardsRes, bankTxData] = await Promise.all([
-      supabase.from('branches').select('*'),
-      supabase.from('categories').select('*'),
-      supabase.from('products').select('*').eq('status', 'active'),
-      branchId ? supabase.from('inventory').select('*').eq('branch_id', branchId) : supabase.from('inventory').select('*'),
-      supabase.from('users').select('*').eq('is_active', true),
-      supabase.from('customers').select('*').order('name').limit(5000),
-      supabase.from('currencies').select('*'),
-      branchId ? supabase.from('transactions').select('*').eq('branch_id', branchId).order('created_at', { ascending: false }).limit(250) : supabase.from('transactions').select('*').order('created_at', { ascending: false }).limit(250),
-      branchId ? supabase.from('cash_sessions').select('*').eq('branch_id', branchId).order('opened_at', { ascending: false }).limit(12) : supabase.from('cash_sessions').select('*').order('opened_at', { ascending: false }).limit(12),
-      supabase.from('settings').select('*').eq('id', 'global').maybeSingle(),
-      supabase.from('inventory_transfers').select('*').order('date', { ascending: false }).limit(500),
-      supabase.from('bank_cards').select('*'),
-      fetchAllRows(supabase, 'bank_transactions', 'date')
-    ]);
-    const firstError = [branchesRes,categoriesRes,productsRes,inventoryRes,usersRes,customersRes,currenciesRes, txRes,sessionsRes,transferRes,bankCardsRes].find(r => r.error)?.error;
-    if (firstError) throw firstError;
-    const mapProduct = (p:any): Product => ({ id:p.id,name:p.name,sku:p.sku||'',barcode:p.barcode||'',costPrice:Number(p.cost_price)||0,price:Number(p.price)||0,margin:Number(p.margin)||0,categoryId:p.category_id||'',color:p.color||'bg-slate-100 text-slate-700',commissionType:p.commission_type||'percentage',commissionValue:Number(p.commission_value)||0,unit:p.unit||'unidad',status:p.status||'active',minStockAlert:Number(p.min_stock_alert)||5,hasSerial:Boolean(p.has_serial),warrantyDays:Number(p.warranty_days)||0,isKit:Boolean(p.is_kit),kitItems:Array.isArray(p.kit_items)?p.kit_items:[],kitComponents:Array.isArray(p.kit_components)?p.kit_components:(Array.isArray(p.kit_items)?p.kit_items:[]),deviceColor:p.device_color||'',availableSizes:Array.isArray(p.available_sizes)?p.available_sizes:[],availableColors:Array.isArray(p.available_colors)?p.available_colors:[] });
-    const mappedProducts = (productsRes.data||[]).map(mapProduct);
-    const mapInventory = (i:any): InventoryLevel => ({ id:i.id,productId:i.product_id,branchId:i.branch_id,variantLabel:i.variant_label||undefined,quantity:Number(i.quantity)||0,minQuantity:Number(i.min_quantity)||0 });
-    const mapUser = (u:any): User => ({ id:u.id,name:u.name,email:u.email||'',password:u.password||'',role:u.role||'employee',commissionRate:Number(u.commission_rate)||0,baseSalary:Number(u.base_salary)||0,salesGoal:Number(u.sales_goal)||0,branchId:u.branch_id||undefined,allowedBranches:Array.isArray(u.allowed_branches)?u.allowed_branches:undefined,permissions:Array.isArray(u.permissions)?u.permissions:undefined,isActive:u.is_active!==false });
-    const mapCustomer = (c:any): Customer => ({ id:c.id,name:c.name,email:c.email||'',phone:c.phone||'',taxId:c.tax_id||'' });
-    const mapTx = (t:any): Transaction => ({ id:t.id,date:t.date,total:Number(t.total)||0,tax:Number(t.tax)||0,discount:Number(t.discount)||0,branchId:t.branch_id,customerId:t.customer_id,userId:t.user_id,status:t.status||'completed',ncf:t.ncf||undefined,ncfType:t.ncf_type||undefined,notes:t.notes||'',paymentMethod:t.payment_method||'cash',sessionId:t.session_id,changeGiven:Number(t.change_given)||0,items:normalizeTransactionItems(t.items, mappedProducts),payments:Array.isArray(t.payments)?t.payments:[],changePayments:Array.isArray(t.change_payments)?t.change_payments:[],sellerEmployeeIds:Array.isArray(t.seller_employee_ids)?t.seller_employee_ids:[],deletedAt:t.deleted_at||undefined,deletedBy:t.deleted_by||undefined,deleteReason:t.delete_reason||undefined });
-    const mapSession = mapCashSessionFromRemote;
-    return { success:true, data:{
-      branches:(branchesRes.data||[]).map((b:any)=>({id:b.id,name:b.name,address:b.address,phone:b.phone,isMain:b.is_main,isActive:b.is_active !== false})),
-      categories:(categoriesRes.data||[]).map((c:any)=>({id:c.id,name:c.name,department:c.department||'',color:c.color})),
-      products:(productsRes.data||[]).map(mapProduct), inventory:(inventoryRes.data||[]).map(mapInventory), users:(usersRes.data||[]).map(mapUser),
-      customers:(customersRes.data||[]).map(mapCustomer), currencies:(currenciesRes.data||[]).map((c:any)=>({code:c.code,name:c.name||c.code,symbol:c.symbol||c.code,rateToBase:Number(c.rate_to_base)||1,isBase:Boolean(c.is_base)})),
-      transactions:(txRes.data||[]).map(mapTx), cashSessions:(sessionsRes.data||[]).map(mapSession),
-      transfers:(transferRes.data||[]).map((t:any)=>({id:t.id,operationId:t.operation_id||t.id,productId:t.product_id,productName:t.product_name||'Producto',fromBranchId:t.from_branch_id,fromBranchName:t.from_branch_name||'Sucursal Origen',toBranchId:t.to_branch_id,toBranchName:t.to_branch_name||'Sucursal Destino',variantLabel:t.variant_label||'Producto Base',quantity:Number(t.quantity)||0,variants:Array.isArray(t.variants)?t.variants:[],date:t.date,userId:t.user_id,status:t.status||'completed'})),
-      bankCards:(bankCardsRes.data||[]).map((bc:any)=>({id:bc.id,name:bc.name||bc.card_holder||bc.bank_name||'Tarjeta Bancaria',bank:bc.bank||bc.bank_name||'Banco',bankName:bc.bank_name||bc.bank||'Banco',cardHolder:bc.card_holder||bc.name||'Titular',accountNumber:bc.account_number||bc.last_four_digits||'',lastFour:bc.last_four_digits||(bc.account_number?String(bc.account_number).slice(-4):''),lastFourDigits:bc.last_four_digits||'',phone:bc.phone||'',currency:bc.currency||'CUP',balance:Number(bc.balance)||0,color:bc.color||'from-blue-600 to-indigo-800',isActive:bc.is_active!==false})),
-      bankTransactions:(bankTxData||[]).map((bt:any)=>({id:bt.id,cardId:bt.card_id||bt.cardId,type:bt.type,amount:Number(bt.amount)||0,date:bt.date,reference:bt.reference||'',description:bt.description||'',transactionId:bt.transaction_id||bt.transactionId})),
-      settings:settingsRes.data||null
-    }};
-  } catch (e:any) { return { success:false, data:null, message:e?.message||'No se pudo cargar el caché POS' }; }
-}
-
-export async function pullAllFromSupabase(): Promise<{ data: any; result: SyncResult }> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    return {
-      data: null,
-      result: {
-        success: false,
-        message: "Supabase no está configurado. Ingresa la URL y Clave Anon en Configuración."
-      }
-    };
-  }
-
-  const errors: string[] = [];
-  const fetchedData: any = {};
-
-  try {
-    // 1. Categories
-    try {
-      const { data, error } = await supabase.from('categories').select('*');
-      if (error) throw error;
-      if (data && Array.isArray(data)) {
-        fetchedData.categories = data.map((c: any): Category => ({
-          id: c.id,
-          name: c.name,
-          department: c.department || '',
-          color: c.color
-        }));
-      }
-    } catch (e: any) {
-      errors.push(`Categorías: ${e.message}`);
-    }
-
-    // 2. Branches
-    try {
-      const { data, error } = await supabase.from('branches').select('*');
-      if (error) throw error;
-      if (data && Array.isArray(data)) {
-        fetchedData.branches = data.map((b: any): Branch => ({
-          id: b.id,
-          name: b.name,
-          address: b.address,
-          phone: b.phone,
-          isMain: b.is_main
-        }));
-      }
-    } catch (e: any) {
-      errors.push(`Sucursales: ${e.message}`);
-    }
-
-    // 3. Products
-    try {
-      const { data, error } = await supabase.from('products').select('*');
-      if (error) throw error;
-      if (data && Array.isArray(data)) {
-        fetchedData.products = data.map((p: any): Product => ({
-          id: p.id,
-          name: p.name,
-          sku: p.sku || '',
-          barcode: p.barcode || '',
-          costPrice: Number(p.cost_price) || 0,
-          price: Number(p.price) || 0,
-          margin: Number(p.margin) || (Number(p.price) - Number(p.cost_price)),
-          categoryId: p.category_id || '',
-          color: p.color || 'bg-slate-100 text-slate-700',
-          commissionType: p.commission_type || 'percentage',
-          commissionValue: Number(p.commission_value) || 0,
-          unit: p.unit || 'unidad',
-          status: p.status || 'active',
-          minStockAlert: p.min_stock_alert || 5,
-          hasSerial: Boolean(p.has_serial),
-          warrantyDays: p.warranty_days || 0,
-          isKit: Boolean(p.is_kit),
-          kitItems: Array.isArray(p.kit_items) ? p.kit_items : [],
-          kitComponents: Array.isArray(p.kit_components) ? p.kit_components : (Array.isArray(p.kit_items) ? p.kit_items : []),
-          deviceColor: p.device_color || '',
-          availableSizes: Array.isArray(p.available_sizes) ? p.available_sizes : [],
-          availableColors: Array.isArray(p.available_colors) ? p.available_colors : []
-        }));
-      }
-    } catch (e: any) {
-      errors.push(`Productos: ${e.message}`);
-    }
-
-    // 4. Inventory
-    try {
-      const { data, error } = await supabase.from('inventory').select('*');
-      if (error) throw error;
-      if (data && Array.isArray(data)) {
-        fetchedData.inventory = data.map((i: any): InventoryLevel => ({
-          id: i.id,
-          productId: i.product_id,
-          branchId: i.branch_id,
-          variantLabel: i.variant_label || undefined,
-          quantity: Number(i.quantity) || 0,
-          minQuantity: Number(i.min_quantity) || 0
-        }));
-      }
-    } catch (e: any) {
-      errors.push(`Inventario: ${e.message}`);
-    }
-
-    // 5. Users
-    try {
-      const { data, error } = await supabase.from('users').select('*');
-      if (error) throw error;
-      if (data && Array.isArray(data)) {
-        fetchedData.users = data.map((u: any): User => ({
-          id: u.id,
-          name: u.name,
-          email: u.email || '',
-          password: u.password || '',
-          role: u.role || 'employee',
-          commissionRate: Number(u.commission_rate) || 0,
-          baseSalary: Number(u.base_salary) || 0,
-          salesGoal: Number(u.sales_goal) || 0,
-          branchId: u.branch_id || undefined,
-          allowedBranches: Array.isArray(u.allowed_branches) ? u.allowed_branches : undefined,
-          permissions: Array.isArray(u.permissions) ? u.permissions : undefined,
-          isActive: u.is_active !== false,
-        }));
-      }
-    } catch (e: any) {
-      errors.push(`Usuarios: ${e.message}`);
-    }
-
-    // 6. Bank Cards
-    try {
-      const { data, error } = await supabase.from('bank_cards').select('*');
-      if (error) throw error;
-      if (data && Array.isArray(data)) {
-        fetchedData.bankCards = data.map((bc: any): BankCard => ({
-          id: bc.id,
-          name: bc.name || bc.card_holder || bc.bank_name || 'Tarjeta Bancaria',
-          bank: bc.bank || bc.bank_name || 'Banco',
-          bankName: bc.bank_name || bc.bank || 'Banco',
-          cardHolder: bc.card_holder || bc.name || 'Titular',
-          accountNumber: bc.account_number || bc.accountNumber || bc.last_four_digits || bc.last_four || '',
-          lastFour: bc.last_four || bc.last_four_digits || (bc.account_number ? String(bc.account_number).slice(-4) : ''),
-          lastFourDigits: bc.last_four_digits || bc.last_four || (bc.account_number ? String(bc.account_number).slice(-4) : ''),
-          phone: bc.phone || '',
-          currency: bc.currency || 'CUP',
-          balance: Number(bc.balance) || 0,
-          color: bc.color || 'from-blue-600 to-indigo-800',
-          isActive: bc.is_active !== false
-        }));
-      }
-    } catch (e: any) {
-      errors.push(`Tarjetas Bancarias: ${e.message}`);
-    }
-
-    // 6b. Bank Transactions
-    try {
-      const data = await fetchAllRows(supabase, 'bank_transactions', 'date'); const error = null;
-      if (!error && data && Array.isArray(data)) {
-        fetchedData.bankTransactions = data.map((bt: any): BankTransaction => ({
-          id: bt.id,
-          cardId: bt.card_id || bt.cardId,
-          type: bt.type,
-          amount: Number(bt.amount) || 0,
-          date: bt.date,
-          reference: bt.reference || '',
-          description: bt.description || '',
-          transactionId: bt.transaction_id || bt.transactionId
-        }));
-      }
-    } catch (e: any) {
-      // Non-fatal
-    }
-
-    // 7. Customers
-    try {
-      const { data, error } = await supabase.from('customers').select('*');
-      if (error) throw error;
-      if (data && Array.isArray(data)) {
-        fetchedData.customers = data.map((c: any): Customer => ({
-          id: c.id,
-          name: c.name,
-          email: c.email || '',
-          phone: c.phone || '',
-          taxId: c.tax_id || ''
-        }));
-      }
-    } catch (e: any) {
-      errors.push(`Clientes: ${e.message}`);
-    }
-
-    // 8. Currencies (Strictly CUP, USD, EUR)
-    try {
-      const { data, error } = await supabase.from('currencies').select('*');
-      if (error) throw error;
-      if (data && Array.isArray(data)) {
-        const allowedCodes = ['CUP', 'USD', 'EUR'];
-        fetchedData.currencies = data
-          .filter((c: any) => allowedCodes.includes(c.code))
-          .map((c: any): Currency => ({
-            code: c.code,
-            name: c.name || (c.code === 'CUP' ? 'Peso Cubano' : c.code === 'USD' ? 'Dólar Estadounidense' : 'Euro'),
-            symbol: c.symbol || (c.code === 'EUR' ? '€' : '$'),
-            rateToBase: Number(c.rate_to_base) || (c.code === 'CUP' ? 1 : c.code === 'USD' ? 320 : 350),
-            isBase: c.code === 'CUP' ? true : Boolean(c.is_base)
-          }));
-      }
-    } catch (e: any) {
-      errors.push(`Monedas: ${e.message}`);
-    }
-
-    // 9. Transactions
-    try {
-      const data = await fetchAllRows(supabase, 'transactions', 'date'); const error = null;
-      if (!error && data && Array.isArray(data)) {
-        fetchedData.transactions = data.map((t: any): Transaction => ({
-          id: t.id,
-          date: t.date,
-          total: Number(t.total) || 0,
-          tax: Number(t.tax) || 0,
-          discount: Number(t.discount) || 0,
-          branchId: t.branch_id,
-          customerId: t.customer_id,
-          userId: t.user_id,
-          status: t.status || 'completed',
-          ncf: t.ncf || undefined,
-          ncfType: t.ncf_type || undefined,
-          notes: t.notes || '',
-          paymentMethod: t.payment_method || 'cash',
-          sessionId: t.session_id,
-          changeGiven: Number(t.change_given) || 0,
-          items: normalizeTransactionItems(t.items, fetchedData.products || []),
-          payments: Array.isArray(t.payments) ? t.payments : [],
-          changePayments: Array.isArray(t.change_payments) ? t.change_payments : [],
-          sellerEmployeeIds: Array.isArray(t.seller_employee_ids) ? t.seller_employee_ids : [],
-          deletedAt: t.deleted_at || undefined,
-          deletedBy: t.deleted_by || undefined,
-          deleteReason: t.delete_reason || undefined
-        }));
-      }
-    } catch (e: any) {
-      // Non-fatal
-    }
-
-    // 10. Cash Sessions
-    try {
-      const data = await fetchAllRows(supabase, 'cash_sessions', 'opened_at'); const error = null;
-      if (!error && data && Array.isArray(data)) {
-        fetchedData.cashSessions = data.map((s: any): CashRegisterSession => {
-          let notes = s.notes || '';
-          let closingBalances = Array.isArray(s.closing_balances) ? s.closing_balances : [];
-          let closingDate = s.closing_date || undefined;
-          let movements = Array.isArray(s.movements) ? s.movements : [];
-          let auditStatus: CashRegisterSession['auditStatus'] | undefined = s.audit_status || undefined;
-          let auditNotes: string | undefined = s.audit_notes || undefined;
-
-          if (notes && notes.includes('__META__:')) {
-            const parts = notes.split('__META__:');
-            notes = parts[0].trim();
-            try {
-              const meta = JSON.parse(parts[1]);
-              if (meta.closing_balances && meta.closing_balances.length > 0) closingBalances = meta.closing_balances;
-              if (meta.closing_date) closingDate = meta.closing_date;
-              if (meta.audit_status === 'pending_review' || meta.audit_status === 'reviewed' || meta.audit_status === 'resolved') {
-                auditStatus = meta.audit_status;
-              }
-              if (typeof meta.audit_notes === 'string') auditNotes = meta.audit_notes;
-              if (meta.movements && meta.movements.length > 0) movements = meta.movements;
-            } catch (e) {
-              // ignore
-            }
-          }
-
-          return {
-            id: s.id,
-            turnNumber: Number(s.turn_number) || undefined,
-            userId: s.user_id,
-            workerName: s.worker_name,
-            branchId: s.branch_id,
-            openedAt: s.opened_at,
-            closedAt: s.closed_at,
-            openingBalance: Number(s.opening_balance ?? s.opening_amount) || 0,
-            openingAmount: Number(s.opening_amount ?? s.opening_balance) || 0,
-            closingBalances,
-            status: s.status || 'open',
-            notes,
-            closingDate,
-            workingEmployeeIds: Array.isArray(s.working_employee_ids) ? s.working_employee_ids : [],
-            movements,
-            auditStatus,
-            auditNotes,
-            deletedAt: s.deleted_at || undefined,
-            deletedBy: s.deleted_by || undefined,
-            deleteReason: s.delete_reason || undefined
-          };
-        });
-      }
-    } catch (e: any) {
-      // Non-fatal
-    }
-
-    // 11. Inventory Transfers
-    try {
-      const { data, error } = await supabase.from('inventory_transfers').select('*').order('date', { ascending: false });
-      if (!error && data && Array.isArray(data)) {
-        fetchedData.transfers = data.map((t: any): InventoryTransfer => ({
-          id: t.id,
-          productId: t.product_id,
-          productName: t.product_name,
-          fromBranchId: t.from_branch_id,
-          fromBranchName: t.from_branch_name,
-          toBranchId: t.to_branch_id,
-          toBranchName: t.to_branch_name,
-          variantLabel: t.variant_label,
-          quantity: Number(t.quantity) || 0,
-          variants: Array.isArray(t.variants) ? t.variants : [],
-          date: t.date,
-          userId: t.user_id,
-          status: t.status || 'completed',
-          batchId: t.batch_id || undefined,
-          operationId: t.operation_id || t.id
-        }));
-      }
-    } catch (e) { /* ignore */ }
-
-    // 12. Warranties
-    try {
-      const { data, error } = await supabase.from('warranties').select('*');
-      if (!error && data && Array.isArray(data)) {
-        fetchedData.warranties = data.map((w: any): Warranty => ({
-          id: w.id,
-          productId: w.product_id,
-          productName: w.product_name,
-          transactionId: w.transaction_id,
-          customerId: w.customer_id,
-          customerName: w.customer_name,
-          purchaseDate: w.purchase_date,
-          expiryDate: w.expiry_date,
-          serialNumber: w.serial_number,
-          status: w.status || 'active'
-        }));
-      }
-    } catch (e) { /* ignore */ }
-
-    // 13. Returns
-    try {
-      const { data, error } = await supabase.from('returns').select('*').order('date', { ascending: false });
-      if (!error && data && Array.isArray(data)) {
-        fetchedData.returns = data.map((r: any): ReturnItem => ({
-          id: r.id,
-          transactionId: r.transaction_id,
-          productId: r.product_id,
-          quantity: Number(r.quantity) || 1,
-          reason: r.reason,
-          date: r.date,
-          status: r.status || 'pending',
-          type: r.type || 'refund',
-          notes: r.notes,
-          variantLabel: r.variant_label,
-          branchId: r.branch_id || undefined,
-          replacementProductId: r.replacement_product_id || undefined,
-          replacementQuantity: r.replacement_quantity ?? undefined,
-          processedBy: r.processed_by || undefined,
-          refundStatus: r.refund_status || (r.type === 'refund' ? 'pending' : 'not_required'),
-          refundAmount: r.refund_amount == null ? undefined : Number(r.refund_amount),
-          refundCurrencyCode: r.refund_currency_code || undefined,
-          refundMethod: r.refund_method || undefined,
-          refundBankCardId: r.refund_bank_card_id || undefined,
-          refundTransactionId: r.refund_transaction_id || undefined,
-          receivedAt: r.received_at || undefined,
-          refundedAt: r.refunded_at || undefined
-        }));
-      }
-    } catch (e) { /* ignore */ }
-
-    // 14. Quotes
-    try {
-      const { data, error } = await supabase.from('quotes').select('*').order('date', { ascending: false });
-      if (!error && data && Array.isArray(data)) {
-        fetchedData.quotes = data.map((q: any): Quote => ({
-          id: q.id,
-          branchId: q.branch_id,
-          userId: q.user_id,
-          customerId: q.customer_id,
-          date: q.date,
-          subtotal: Number(q.subtotal) || 0,
-          tax: Number(q.tax) || 0,
-          total: Number(q.total) || 0,
-          items: Array.isArray(q.items) ? q.items : [],
-          status: q.status || 'pending',
-          notes: q.notes
-        }));
-      }
-    } catch (e) { /* ignore */ }
-
-    // 15. Time Shifts
-    try {
-      const { data, error } = await supabase.from('time_shifts').select('*').order('clock_in', { ascending: false });
-      if (!error && data && Array.isArray(data)) {
-        fetchedData.timeShifts = data.map((s: any): TimeShift => ({
-          id: s.id,
-          userId: s.user_id,
-          clockIn: s.clock_in,
-          clockOut: s.clock_out,
-          notes: s.notes
-        }));
-      }
-    } catch (e) { /* ignore */ }
-
-    // 16. Salary Settlements
-    try {
-      const { data, error } = await supabase.from('salary_settlements').select('*').order('date', { ascending: false });
-      if (!error && data && Array.isArray(data)) {
-        fetchedData.salarySettlements = data.map((s: any): SalarySettlement => ({
-          id: s.id,
-          userId: s.user_id,
-          userName: s.user_name,
-          sessionId: s.session_id,
-          baseSalary: Number(s.base_salary) || 0,
-          salesGoal: Number(s.sales_goal) || 0,
-          commissions: Number(s.commissions) || 0,
-          total: Number(s.total) || 0,
-          date: s.date,
-          status: s.status || 'pending'
-        }));
-      }
-    } catch (e) { /* ignore */ }
-
-    // 17. Suppliers
-    try {
-      const { data, error } = await supabase.from('suppliers').select('*');
-      if (!error && data && Array.isArray(data)) {
-        fetchedData.suppliers = data.map((s: any): Supplier => ({
-          id: s.id,
-          name: s.name,
-          phone: s.phone || '',
-          address: s.address || '',
-          email: s.email || '',
-          rating: Number(s.rating) || 5,
-          products: Array.isArray(s.products) ? s.products : [],
-          typeOfMerchandise: s.type_of_merchandise || s.typeOfMerchandise || ''
-        }));
-      }
-    } catch (e) { /* ignore */ }
-
-    // 18. Supplier Orders
-    try {
-      const { data, error } = await supabase.from('supplier_orders').select('*').order('date', { ascending: false });
-      if (!error && data && Array.isArray(data)) {
-        fetchedData.supplierOrders = data.map((o: any): SupplierOrder => ({
-          id: o.id,
-          supplierId: o.supplier_id || o.supplierId,
-          date: o.date,
-          expectedDeliveryDate: o.expected_delivery_date || o.expectedDeliveryDate,
-          items: Array.isArray(o.items) ? o.items : [],
-          total: Number(o.total) || 0,
-          status: o.status || 'pending',
-          branchId: o.branch_id || o.branchId,
-          transportDetails: o.transport_details || o.transportDetails,
-          transportCost: Number(o.transport_cost || o.transportCost) || 0
-        }));
-      }
-    } catch (e) { /* ignore */ }
-
-    // 19. Global Settings (Receipt, Store, Catalog Configs, and State)
-    try {
-      const { data: setRes, error: setErr } = await supabase.from('settings').select('*').eq('id', 'global').maybeSingle();
-      if (!setErr && setRes) {
-        if (setRes.receipt_config) fetchedData.receiptConfig = setRes.receipt_config;
-        if (setRes.store_config) {
-          fetchedData.storeConfig = setRes.store_config;
-          if (Array.isArray(setRes.store_config.fiscalConfigs)) {
-            fetchedData.fiscalConfigs = setRes.store_config.fiscalConfigs;
-          }
-        }
-        if (setRes.catalog_config) fetchedData.catalogConfig = setRes.catalog_config;
-        if (setRes.last_turn_number !== undefined) fetchedData.lastTurnNumber = Number(setRes.last_turn_number);
-      }
-    } catch (e: any) {
-      errors.push(`Configuración de Tickets: ${e.message}`);
-    }
-
-    const counts = {
-      products: fetchedData.products?.length || 0,
-      categories: fetchedData.categories?.length || 0,
-      inventory: fetchedData.inventory?.length || 0,
-      branches: fetchedData.branches?.length || 0,
-      users: fetchedData.users?.length || 0,
-      bankCards: fetchedData.bankCards?.length || 0,
-      customers: fetchedData.customers?.length || 0,
-      currencies: fetchedData.currencies?.length || 0,
-      transactions: fetchedData.transactions?.length || 0,
-      cashSessions: fetchedData.cashSessions?.length || 0,
-      suppliers: fetchedData.suppliers?.length || 0,
-      supplierOrders: fetchedData.supplierOrders?.length || 0
-    };
-
-    return {
-      data: fetchedData,
-      result: {
-        success: errors.length === 0,
-        message: errors.length === 0
-          ? `Sincronización exitosa: ${counts.products} productos, ${counts.inventory} registros de stock y ${counts.categories} categorías descargados de Supabase.`
-          : `Sincronización parcial: ${errors.length} bloque(s) no pudieron actualizarse; los datos no confirmados se conservaron localmente.`,
-        counts,
-        errors: errors.length > 0 ? errors : undefined
-      }
-    };
-  } catch (err: any) {
-    return {
-      data: null,
-      result: {
-        success: false,
-        message: `Error durante la sincronización: ${err?.message || 'Error desconocido'}`
-      }
-    };
-  }
-}
-
-
-/**
- * Realiza un upsert seguro en Supabase. Si una columna no existe en el esquema remoto
- * (error PGRST204), si hay un error de clave foránea (23503), o si un ID no es UUID válido (22P02),
- * lo corrige y reintenta la operación para garantizar persistencia continua sin fallos.
- */
