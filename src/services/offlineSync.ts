@@ -358,12 +358,12 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
       // operación de IndexedDB. Así una respuesta incompleta o una caída durante
       // la confirmación nunca puede dejar una venta perdida y una cola vacía.
       const { data: persisted, error: verifyError } = await supabase
-        .from('transactions')
-        .select('id,status,total,branch_id')
+        .from('sales')
+        .select('id,status,total,warehouse_id')
         .eq('id', transaction.id)
         .maybeSingle();
       if (verifyError) throw verifyError;
-      if (!persisted || persisted.id !== transaction.id || persisted.status === 'refunded' || persisted.status === 'cancelled') {
+      if (!persisted || persisted.id !== transaction.id || persisted.status === 'voided' || persisted.status === 'refunded') {
         throw new Error('Supabase no confirmó la venta como completada después de procesarla');
       }
 
