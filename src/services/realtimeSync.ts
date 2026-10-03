@@ -24,7 +24,7 @@ const OP_TABLES=new Set([
   'payroll_runs','payroll_items'
 ]);
 
-async async function getTenantState(){
+async function getTenantState(){
   const { getActiveTenant } = await import('./tenant');
   const tenant = await getActiveTenant();
   return { companyId: tenant.companyId, branchId: useStore.getState().currentBranchId, bootstrapPosFromSupabase: async()=>{ const {pullPosBootstrapFromSupabase}=await import('./supabaseSync'); const r=await pullPosBootstrapFromSupabase(useStore.getState().currentBranchId); if(r.success){useStore.setState(r.data);return true;} return false; }, refreshBranchOperationalData:()=>useStore.getState().refreshBranchOperationalData(), refreshGlobalCatalogData:()=>useStore.getState().refreshGlobalCatalogData() };
@@ -76,7 +76,7 @@ export function initMultiDeviceRealtimeSync():()=>void{
   const supabase=getSupabase();
   if(!supabase)return ()=>{};
 
-  const subscribe=()=>{
+  const subscribe=async ()=>{
     if(realtimeChannel)return;
     const state=await getTenantState();
     const tenant=state.companyId;
@@ -102,7 +102,7 @@ export function initMultiDeviceRealtimeSync():()=>void{
     bootstrappedTenantKey='';
     if(realtimeChannel){try{supabase.removeChannel(realtimeChannel);}catch{}realtimeChannel=null;}
   };
-  const onOnline=()=>{subscribe();refresh(false).catch(()=>{});};
+  const onOnline=()=>{void subscribe();refresh(false).catch(()=>{});};
   const onFocus=()=>{if(document.visibilityState!=='hidden')schedule('operational',300);};
   const onVisibility=()=>{if(document.visibilityState==='visible')schedule('all',300);};
 
