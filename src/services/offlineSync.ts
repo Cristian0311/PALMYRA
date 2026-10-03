@@ -363,13 +363,6 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
       }
       return true;
     }
-    case 'idn_settlement_price_delete': {
-      const id = String(data?.id || '');
-      if (!id) throw new PermanentSyncError('Eliminación de precio IDN sin ID');
-      const { error } = await supabase.from('idn_settlement_prices').delete().eq('id', id);
-      if (error) throw error;
-      return true;
-    }
     case 'supplier_delete': {
       const id = String(data?.id || '');
       if (!id) throw new PermanentSyncError('Eliminación de proveedor sin ID');
@@ -440,11 +433,10 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
     case 'user': {
       const u = data;
       const email = u.email && String(u.email).trim() ? u.email : `${String(u.name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '')}_${String(u.id).slice(0, 6)}@system.local`;
-      const { error } = await supabase.from('users').upsert({ id:u.id, name:u.name, email, password:u.password || null, role:u.role || 'employee', base_salary:u.baseSalary || 0, sales_goal:u.salesGoal || 0, branch_id:u.branchId || null, allowed_branches:u.allowedBranches || [], permissions:u.permissions || [], is_active:u.isActive !== false, is_independent:u.isIndependent === true, assigned_branch_id:u.assignedBranchId || u.branchId || null });
+      const { error } = await supabase.from('users').upsert({ id:u.id, name:u.name, email, password:u.password || null, role:u.role || 'employee', base_salary:u.baseSalary || 0, sales_goal:u.salesGoal || 0, branch_id:u.branchId || null, allowed_branches:u.allowedBranches || [], permissions:u.permissions || [], is_active:u.isActive !== false });
       if (error) throw error; return true;
     }
     case 'currency': { const c=data; const {error}=await supabase.from('currencies').upsert({code:c.code,name:c.name,symbol:c.symbol,rate_to_base:c.rateToBase,is_base:c.isBase},{onConflict:'code'}); if(error) throw error; return true; }
-    case 'idn_settlement_price': { const d=data; const {error}=await supabase.from('idn_settlement_prices').upsert({id:d.id,user_id:d.userId,product_id:d.productId,settlement_price:d.settlementPrice}); if(error) throw error; return true; }
     case 'warranty': { const d=data; const {error}=await supabase.from('warranties').upsert({id:d.id,product_id:d.productId,product_name:d.productName,transaction_id:d.transactionId,customer_id:d.customerId,customer_name:d.customerName,purchase_date:d.purchaseDate,expiry_date:d.expiryDate,serial_number:d.serialNumber,status:d.status}); if(error) throw error; return true; }
     case 'time_shift': { const d=data; const {error}=await supabase.from('time_shifts').upsert({id:d.id,user_id:d.userId,clock_in:d.clockIn,clock_out:d.clockOut,notes:d.notes}); if(error) throw error; return true; }
     case 'quote': { const d=data; const {error}=await supabase.from('quotes').upsert({id:d.id,branch_id:d.branchId,user_id:d.userId,customer_id:d.customerId,date:d.date,subtotal:d.subtotal,tax:d.tax,total:d.total,items:d.items||[],status:d.status,notes:d.notes}); if(error) throw error; return true; }
@@ -547,10 +539,8 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
     case 'inventory_audit': { const d=data; const {error}=await supabase.from('inventory_audits').upsert({id:d.id,date:d.date,branch_id:d.branchId,user_id:d.userId,status:d.status,items:d.items||[],notes:d.notes}); if(error) throw error; return true; }
     case 'transaction': {
       const transaction = data as Transaction;
-      // Una liquidación IDN con productos es una venta física y usa la misma RPC
       // atómica/idempotente que el POS normal para descontar stock.
       // Una liquidación sin productos sigue siendo solo administrativa.
-      if (transaction.notes === 'LIQUIDACION_IDN' && (transaction.items || []).length === 0) {
         const { error } = await supabase.from('transactions').upsert({
           id: transaction.id, date: transaction.date, total: transaction.total,
           tax: transaction.tax || 0, discount: transaction.discount || 0,
@@ -572,10 +562,8 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
           .maybeSingle();
         if (verifyIdnError) throw verifyIdnError;
         if (!persistedIdn || persistedIdn.id !== transaction.id || persistedIdn.status === 'refunded' || persistedIdn.status === 'cancelled') {
-          throw new Error('Supabase no confirmó la liquidación IDN como completada');
         }
         if ((transaction.ncf || null) !== (persistedIdn.ncf || null) || (transaction.ncfType || null) !== (persistedIdn.ncf_type || null)) {
-          throw new PermanentSyncError('El NCF de la liquidación IDN no coincide con el registro fiscal de Supabase');
         }
         useStore.setState(state => {
           const exists = (state.transactions || []).some(t => t.id === transaction.id);
@@ -1120,17 +1108,15 @@ export async function processOfflineQueue(): Promise<{ processed: number; failed
         break;
       case 'branch_delete':
       case 'category_delete':
-      case 'idn_settlement_price_delete':
       case 'supplier_delete':
         break;
       case 'salary_settlement': add(cashOp(data.sessionId, 'close')); break;
       case 'bank_transaction': add(dep('bank_card', data.cardId)); add(dep('transaction', data.transactionId)); break;
       case 'bank_card_balance': add(dep('bank_card', data.id)); break;
-      case 'idn_settlement_price': add(dep('product', data.productId)); add(dep('user', data.userId)); break;
       case 'time_shift': add(dep('user', data.userId)); break;
       case 'quote': add(dep('branch', data.branchId)); add(dep('user', data.userId)); add(dep('customer', data.customerId)); break;
       case 'warranty': add(dep('product', data.productId)); add(dep('transaction', data.transactionId)); add(dep('customer', data.customerId)); break;
-      case 'user': add(dep('branch', data.branchId)); add(dep('branch', data.assignedBranchId)); add(dep('user', data.supervisorId)); break;
+      case 'user': add(dep('branch', data.branchId));  add(dep('user', data.supervisorId)); break;
       case 'product': add(dep('category', data.categoryId)); break;
       case 'customer_delete': break;
     }
