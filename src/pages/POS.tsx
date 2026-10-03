@@ -1822,7 +1822,14 @@ export default function POS() {
         return;
       }
 
-      const workerToAssign = ((${1}null);
+      const workerToAssign =
+        users.find(u =>
+          u.isActive !== false &&
+          (
+            (u.name || '').trim().toLowerCase() === trimmedWorkerName.toLowerCase() ||
+            u.id === sessionWorkerId
+          )
+        ) || null;
 
       if (!workerToAssign || workerToAssign.isActive === false) {
         setPosError("No se encontró un empleado activo con ese nombre. Actualiza el directorio y vuelve a seleccionar.");
