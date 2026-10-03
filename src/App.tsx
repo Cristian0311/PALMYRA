@@ -4,10 +4,14 @@ import { useShallow } from 'zustand/react/shallow';
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, lazy, Suspense } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
+import Landing from "./pages/Landing";
+import Signup from "./pages/Signup";
+import Onboarding from "./pages/Onboarding";
+import { loadSaaSContext } from "./services/saas";
 import { useStore } from "./store/useStore";
 import { initMultiDeviceRealtimeSync } from "./services/realtimeSync";
 import { initKeyboardViewport } from "./services/keyboardViewport";
@@ -64,6 +68,29 @@ function PageLoading() {
 
 export default function App() {
   const { currentUser, isInitialized, restoreTransactionsFromBackup, currentBranchId } = useStore(useShallow((state) => ({ currentUser: state.currentUser, isInitialized: state.isInitialized, restoreTransactionsFromBackup: state.restoreTransactionsFromBackup, currentBranchId: state.currentBranchId })));
+  const [authBootstrapping, setAuthBootstrapping] = useState(true);
+  const [hasCompany, setHasCompany] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const hydrateAuth = async () => {
+      try {
+        const ctx = await loadSaaSContext();
+        if (!active) return;
+        if (ctx) {
+          useStore.setState({ currentUser: ctx.user, currentBranchId: ctx.warehouseIds[0] || '' });
+          setHasCompany(Boolean(ctx.companyId));
+        } else {
+          useStore.setState({ currentUser: null, currentBranchId: '' });
+          setHasCompany(false);
+        }
+      } finally {
+        if (active) setAuthBootstrapping(false);
+      }
+    };
+    void hydrateAuth();
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (!isInitialized) return;
@@ -152,10 +179,10 @@ export default function App() {
     };
   }, [currentUser?.id, currentBranchId]);
 
-  if (!isInitialized) {
+  if (!isInitialized || authBootstrapping) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rose-500"></div>
       </div>
     );
   }
@@ -165,30 +192,37 @@ export default function App() {
       <Router>
         <Suspense fallback={<PageLoading />}>
           <Routes>
-            <Route path="/shop" element={<CustomerShop />} />
-            
-            <Route path="/*" element={
-              !currentUser ? <Login /> : (
-                <Layout>
-                  <Suspense fallback={<PageLoading />}>
-                    <Routes>
-                      <Route path="/" element={currentUser.role === 'admin' ? <Dashboard /> : <Navigate to="/pos" replace />} />
-                      <Route path="/pos" element={<POS />} />
-                      <Route path="/transfers" element={currentUser.role === 'admin' ? <Transfers /> : <Navigate to="/pos" replace />} />
-                      <Route path="/inventory" element={currentUser.role === 'admin' ? <Inventory /> : <Navigate to="/pos" replace />} />
-                      <Route path="/inventory-audit" element={currentUser.role === 'admin' ? <InventoryAudit /> : <Navigate to="/pos" replace />} />
-                      <Route path="/suppliers" element={currentUser.role === 'admin' ? <Suppliers /> : <Navigate to="/pos" replace />} />
-                      <Route path="/banks" element={currentUser.role === 'admin' ? <Banks /> : <Navigate to="/pos" replace />} />
-                      <Route path="/returns" element={currentUser.role === 'admin' ? <Returns /> : <Navigate to="/pos" replace />} />
-                      <Route path="/customers" element={currentUser.role === 'admin' ? <Customers /> : <Navigate to="/pos" replace />} />
-                      <Route path="/reports" element={currentUser.role === 'admin' ? <Reports /> : <Navigate to="/pos" replace />} />
-                      <Route path="/settings" element={currentUser.role === 'admin' ? <Settings /> : <Navigate to="/pos" replace />} />
-                    </Routes>
-                  </Suspense>
-                </Layout>
-              )
-            } />
-          </Routes>
+          <Route path="/shop" element={<CustomerShop />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/onboarding" element={
+            !currentUser ? <Navigate to="/login" replace /> :
+            hasCompany ? <Navigate to="/" replace /> :
+            <Onboarding />
+          } />
+          <Route path="/*" element={
+            !currentUser ? <Landing /> :
+            !hasCompany ? <Navigate to="/onboarding" replace /> : (
+              <Layout>
+                <Suspense fallback={<PageLoading />}>
+                  <Routes>
+                    <Route path="/" element={currentUser.role === 'admin' ? <Dashboard /> : <Navigate to="/pos" replace />} />
+                    <Route path="/pos" element={<POS />} />
+                    <Route path="/transfers" element={currentUser.role === 'admin' ? <Transfers /> : <Navigate to="/pos" replace />} />
+                    <Route path="/inventory" element={currentUser.role === 'admin' ? <Inventory /> : <Navigate to="/pos" replace />} />
+                    <Route path="/inventory-audit" element={currentUser.role === 'admin' ? <InventoryAudit /> : <Navigate to="/pos" replace />} />
+                    <Route path="/suppliers" element={currentUser.role === 'admin' ? <Suppliers /> : <Navigate to="/pos" replace />} />
+                    <Route path="/banks" element={currentUser.role === 'admin' ? <Banks /> : <Navigate to="/pos" replace />} />
+                    <Route path="/returns" element={currentUser.role === 'admin' ? <Returns /> : <Navigate to="/pos" replace />} />
+                    <Route path="/customers" element={currentUser.role === 'admin' ? <Customers /> : <Navigate to="/pos" replace />} />
+                    <Route path="/reports" element={currentUser.role === 'admin' ? <Reports /> : <Navigate to="/pos" replace />} />
+                    <Route path="/settings" element={currentUser.role === 'admin' ? <Settings /> : <Navigate to="/pos" replace />} />
+                  </Routes>
+                </Suspense>
+              </Layout>
+            )
+          } />
+        </Routes>/Routes>
         </Suspense>
       </Router>
     </ErrorBoundary>
