@@ -194,7 +194,6 @@ export default function POS() {
   const [isClosingSession, setIsClosingSession] = useState(false);
 
   const allowedBranches = useMemo(() => branches || [], [branches]);
-  const isBranchLocked = false;
 
   const [sessionBranchId, setSessionBranchId] = useState<string>(
     currentBranchId || ((branches || []).length > 0 ? branches[0].id : "")
