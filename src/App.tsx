@@ -8,6 +8,7 @@ import { useEffect, useState, lazy, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./components/Layout";
 import { loadSaaSContext } from "./services/saas";
+import { getSupabase } from "./lib/supabase";
 import { useStore } from "./store/useStore";
 import { initMultiDeviceRealtimeSync } from "./services/realtimeSync";
 import { initKeyboardViewport } from "./services/keyboardViewport";
@@ -25,6 +26,9 @@ const Customers = lazy(() => import("./pages/Customers"));
 const Transfers = lazy(() => import("./pages/Transfers"));
 const Reports = lazy(() => import("./pages/Reports"));
 const CustomerShop = lazy(() => import("./pages/CustomerShop"));
+const SaaSAuth = lazy(() => import("./pages/SaaSAuth"));
+const SaaSOnboarding = lazy(() => import("./pages/SaaSOnboarding"));
+const AccountStatus = lazy(() => import("./pages/AccountStatus"));
 const Suppliers = lazy(() => import("./pages/Suppliers"));
 const InventoryAudit = lazy(() => import("./pages/InventoryAudit"));
 const Banks = lazy(() => import("./pages/Banks"));
@@ -65,43 +69,65 @@ function PageLoading() {
 export default function App() {
   const { currentUser, isInitialized, restoreTransactionsFromBackup, currentBranchId } = useStore(useShallow((state) => ({ currentUser: state.currentUser, isInitialized: state.isInitialized, restoreTransactionsFromBackup: state.restoreTransactionsFromBackup, currentBranchId: state.currentBranchId })));
   const [authBootstrapping, setAuthBootstrapping] = useState(true);
+  const [accessState, setAccessState] = useState<"loading" | "signed_out" | "needs_onboarding" | "ready" | "blocked">("loading");
 
-  const ensureLocalAdmin = () => {
-    const current = useStore.getState().currentUser;
-    if (current) return current;
-    const localAdmin = {
-      id: 'palmyra-local-admin',
-      name: 'Administrador',
-      email: '',
-      role: 'admin' as const,
-      baseSalary: 0,
-      permissions: ['pos_access', 'reports_access', 'inventory_access', 'admin_access', 'cash_audit'],
-      isActive: true,
-    };
-    useStore.setState({
-      currentUser: localAdmin,
-      currentBranchId: useStore.getState().currentBranchId || '',
-    });
-    return localAdmin;
+  const hydrateAuth = async () => {
+    setAuthBootstrapping(true);
+    try {
+      const ctx = await loadSaaSContext();
+      if (!ctx) {
+        useStore.setState({ currentUser: null, currentBranchId: "", activeSessionId: null });
+        setAccessState("signed_out");
+        return;
+      }
+
+      useStore.setState({
+        currentUser: ctx.user,
+        currentBranchId: ctx.warehouseIds[0] || "",
+      });
+
+      if (!ctx.companyId) {
+        setAccessState("needs_onboarding");
+      } else if (ctx.company?.account_status === "pending_payment" || ctx.company?.account_status === "suspended") {
+        setAccessState("blocked");
+      } else {
+        setAccessState("ready");
+      }
+    } catch {
+      useStore.setState({ currentUser: null, currentBranchId: "", activeSessionId: null });
+      setAccessState("signed_out");
+    } finally {
+      setAuthBootstrapping(false);
+    }
   };
 
   useEffect(() => {
     let active = true;
-    const hydrateAuth = async () => {
-      try {
-        const ctx = await loadSaaSContext();
-        if (!active) return;
-        if (ctx) {
-          useStore.setState({ currentUser: ctx.user, currentBranchId: ctx.warehouseIds[0] || '' });
-        } else {
-          ensureLocalAdmin();
-        }
-      } finally {
-        if (active) setAuthBootstrapping(false);
-      }
+    const boot = async () => {
+      if (!active) return;
+      await hydrateAuth();
     };
-    void hydrateAuth();
-    return () => { active = false; };
+    void boot();
+
+    const supabase = getSupabase();
+    if (!supabase) return () => { active = false; };
+
+    const { data: authSubscription } = supabase.auth.onAuthStateChange((event) => {
+      if (!active) return;
+      if (event === "SIGNED_OUT") {
+        useStore.setState({ currentUser: null, currentBranchId: "", activeSessionId: null, cart: [] });
+        setAccessState("signed_out");
+        return;
+      }
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        void hydrateAuth();
+      }
+    });
+
+    return () => {
+      active = false;
+      authSubscription.subscription.unsubscribe();
+    };
   }, []);
 
 
@@ -159,16 +185,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!currentUser || getDevicePerformanceTier() === "ultra") return;
+    if (accessState !== "ready" || !currentUser || getDevicePerformanceTier() === "ultra") return;
     // Precalentar solo la ruta POS en dispositivos que no estén en el perfil
     // de 2 GB. En ultra se evita consumir memoria antes de necesitar el POS.
     return scheduleIdleTask(() => {
       void import("./pages/POS");
     }, 1200, 1600);
-  }, [currentUser?.id]);
+  }, [currentUser?.id, accessState]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (accessState !== "ready" || !currentUser) return;
 
     // El login activa los motores. El replay offline es un módulo pesado y se
     // carga solo después de autenticar, mientras que la cola durable ligera ya
@@ -190,7 +216,7 @@ export default function App() {
       cleanupOfflineWatcher();
       cleanupRealtimeSync();
     };
-  }, [currentUser?.id, currentBranchId]);
+  }, [currentUser?.id, currentBranchId, accessState]);
 
   if (!isInitialized || authBootstrapping) {
     return (
@@ -206,7 +232,11 @@ export default function App() {
         <Suspense fallback={<PageLoading />}>
           <Routes>
           <Route path="/shop" element={<CustomerShop />} />
+          <Route path="/auth" element={accessState === "signed_out" ? <SaaSAuth /> : <Navigate to={accessState === "needs_onboarding" ? "/onboarding" : accessState === "blocked" ? "/account-status" : "/"} replace />} />
+          <Route path="/onboarding" element={accessState === "needs_onboarding" ? <SaaSOnboarding /> : <Navigate to={accessState === "signed_out" ? "/auth" : accessState === "blocked" ? "/account-status" : "/"} replace />} />
+          <Route path="/account-status" element={accessState === "blocked" ? <AccountStatus /> : <Navigate to={accessState === "signed_out" ? "/auth" : accessState === "needs_onboarding" ? "/onboarding" : "/"} replace />} />
           <Route path="/*" element={
+            accessState === "ready" && currentUser ? (
               <Layout>
                 <Suspense fallback={<PageLoading />}>
                   <Routes>
@@ -221,9 +251,13 @@ export default function App() {
                     <Route path="/customers" element={currentUser.role === 'admin' ? <Customers /> : <Navigate to="/pos" replace />} />
                     <Route path="/reports" element={currentUser.role === 'admin' ? <Reports /> : <Navigate to="/pos" replace />} />
                     <Route path="/settings" element={currentUser.role === 'admin' ? <Settings /> : <Navigate to="/pos" replace />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </Suspense>
               </Layout>
+            ) : (
+              <Navigate to={accessState === "signed_out" ? "/auth" : accessState === "needs_onboarding" ? "/onboarding" : accessState === "blocked" ? "/account-status" : "/auth"} replace />
+            )
           } />
         </Routes>
         </Suspense>
