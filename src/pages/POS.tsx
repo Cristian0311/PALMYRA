@@ -24,6 +24,7 @@ export default function POS() {
   const [showCashManagementModal, setShowCashManagementModal] = useState(false);
   const [lastClosedSession, setLastClosedSession] = useState<CashRegisterSession | null>(null);
   const [showOpenShiftModal, setShowOpenShiftModal] = useState(false);
+  const [joiningSessionId, setJoiningSessionId] = useState<string | null>(null);
 
 
   // Heavy administrative collections subscribe only while their UI is visible.
@@ -34,6 +35,12 @@ export default function POS() {
   // Debe permanecer reactivo para mostrar inmediatamente qué trabajador ya tiene turno abierto.
   const cashSessions = useStore((state) => state.cashSessions);
   const activeCashSessions = useMemo(() => cashSessions.filter(s => !s.deletedAt), [cashSessions]);
+  const openSessionForWorker = useCallback((workerId: string) => {
+    return activeCashSessions.find(s =>
+      s.status === 'open' &&
+      (s.userId === workerId || s.workingEmployeeIds?.includes(workerId))
+    ) || null;
+  }, [activeCashSessions]);
   const activeTransactions = useMemo(() => transactions.filter(t => !t.deletedAt), [transactions]);
   const [showConfigModal, setShowConfigModal] = useState(false);
 
@@ -181,23 +188,107 @@ export default function POS() {
   const [posError, setPosError] = useState("");
   const [posSuccess, setPosSuccess] = useState("");
   const [openingAmount, setOpeningAmount] = useState("");
-  const [sessionWorkerName, setSessionWorkerName] = useState(currentUser?.name || "Administrador");
+  const [sessionWorkerName, setSessionWorkerName] = useState("");
+  const [sessionWorkerId, setSessionWorkerId] = useState("");
+  // La identidad del trabajador debe reconstruirse desde la sesión persistida
+  // después de cambiar de módulo, recargar la página o rehidratar Zustand.
+  useEffect(() => {
+    // Mantener la selección manual del vendedor mientras se prepara la apertura.
+    // No hay sesión abierta todavía, por lo que currentSession es null y no debe
+    // borrar sessionWorkerName justo después de que el usuario lo selecciona.
+    if (!currentSession) return;
+    if (sessionWorkerName !== (currentSession.workerName || "")) {
+      setSessionWorkerName(currentSession.workerName || "");
+    }
+    if (sessionWorkerId !== (currentSession.userId || "")) {
+      setSessionWorkerId(currentSession.userId || "");
+    }
+    if (currentBranchId !== currentSession.branchId) {
+      setCurrentBranch(currentSession.branchId);
+    }
+  }, [currentSession?.id, currentSession?.userId, currentSession?.workerName, currentSession?.branchId, sessionWorkerName, sessionWorkerId, currentBranchId, setCurrentBranch]);
+  const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
+  const [employeePickerSearch, setEmployeePickerSearch] = useState("");
+  const employeePickerRef = useRef<HTMLDivElement>(null);
+  const [sessionPassword, setSessionPassword] = useState("");
 
   useEffect(() => {
-    if (!currentSession) return;
-    const name = currentSession.workerName || currentUser?.name || "Administrador";
-    if (sessionWorkerName !== name) setSessionWorkerName(name);
-    if (currentBranchId !== currentSession.branchId) setCurrentBranch(currentSession.branchId);
-  }, [currentSession?.id, currentSession?.workerName, currentSession?.branchId, currentUser?.name, sessionWorkerName, currentBranchId, setCurrentBranch]);
+    if (!employeePickerOpen) return;
 
+    const handleOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && employeePickerRef.current?.contains(target)) return;
+      setEmployeePickerOpen(false);
+      setEmployeePickerSearch("");
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setEmployeePickerOpen(false);
+      setEmployeePickerSearch("");
+    };
+
+    document.addEventListener("pointerdown", handleOutsidePointer);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsidePointer);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [employeePickerOpen]);
   const [isOpeningSession, setIsOpeningSession] = useState(false);
   const [isClosingSession, setIsClosingSession] = useState(false);
 
-  const allowedBranches = useMemo(() => branches || [], [branches]);
+  const [joiningSessionPassword, setJoiningSessionPassword] = useState("");
+  const [isNewEmployee, setIsNewEmployee] = useState(false);
+
+  // Empleados de la empresa activa y almacenes autorizados.
+  const detectedWorker = React.useMemo(() => {
+    if (sessionWorkerId) return (users || []).find(u => u.id === sessionWorkerId) || null;
+    const name = (sessionWorkerName || '').trim().toLowerCase();
+    return name ? (users || []).find(u => (u.name || '').trim().toLowerCase() === name) || null : null;
+  }, [sessionWorkerId, sessionWorkerName, users]);
+
+  const workerAssignedBranchId = detectedWorker?.branchId ||
+    (detectedWorker?.allowedBranches?.length === 1 ? detectedWorker.allowedBranches[0] : null);
+
+  const currentSessionWorker = currentSession
+    ? (users || []).find(u =>
+        u.id === currentSession.userId ||
+        (!!u.name && !!currentSession.workerName &&
+         u.name.trim().toLowerCase() === currentSession.workerName.trim().toLowerCase())
+      ) || null
+    : null;
+
+  useEffect(() => {
+    if (workerAssignedBranchId) setSessionBranchId(workerAssignedBranchId);
+  }, [workerAssignedBranchId]);
+
+  useEffect(() => {
+    const exists = sessionWorkerName
+      ? users.some(u => u.isActive !== false &&
+          (u.name || '').trim().toLowerCase() === sessionWorkerName.trim().toLowerCase())
+      : false;
+    setIsNewEmployee(Boolean(sessionWorkerName && !exists));
+  }, [sessionWorkerName, users]);
+
+  const isBranchLocked = Boolean(workerAssignedBranchId);
+
+  const allowedBranches = React.useMemo(() => {
+    if (currentUser?.role === 'admin') return branches || [];
+    const scopeUser = detectedWorker || currentUser;
+    const ids = scopeUser?.allowedBranches || (scopeUser?.branchId ? [scopeUser.branchId] : []);
+    return (branches || []).filter(b => ids.includes(b.id));
+  }, [currentUser, detectedWorker, branches]);
 
   const [sessionBranchId, setSessionBranchId] = useState<string>(
-    currentBranchId || ((branches || []).length > 0 ? branches[0].id : "")
+    currentBranchId || ((allowedBranches || []).length > 0 ? allowedBranches[0].id : "")
   );
+
+;
+
+;
+
+;
 
   const [deductFromSalary, setDeductFromSalary] = useState(false);
 
@@ -208,8 +299,29 @@ export default function POS() {
   const handleCancelShift = async () => {
     if (!currentSession || isCancellingShift) return;
 
-    if (currentUser?.role !== 'admin') {
-      setPosError("Esta acción requiere una cuenta administradora.");
+    const worker = users.find(u =>
+      u.id === currentSession.userId ||
+      (u.name && currentSession.workerName && u.name.toLowerCase() === currentSession.workerName.toLowerCase())
+    );
+
+    const isAdminAuthorized =
+      currentUser?.role === 'admin' &&
+      !!currentUser.password &&
+      cancelShiftPassword === currentUser.password;
+
+    const isWorkerAuthorized =
+      currentUser?.role !== 'admin' &&
+      !!worker?.password &&
+      cancelShiftPassword === worker.password &&
+      worker.isActive !== false;
+
+    if (!isAdminAuthorized && !isWorkerAuthorized) {
+      setPosError(
+        currentUser?.role === 'admin'
+          ? "Contraseña de administrador incorrecta."
+          : `Debes ingresar la contraseña del trabajador del turno (${worker?.name || 'trabajador'}).`
+      );
+      setTimeout(() => setPosError(""), 3000);
       return;
     }
 
@@ -232,6 +344,7 @@ export default function POS() {
       setCashManagementTab('movements');
       setDeductFromSalary(false);
       setShowOpenShiftModal(false);
+      setJoiningSessionId(null);
       setJoiningSessionPassword("");
       setLastClosedSession(null);
       setActiveSessionId(null);
@@ -1692,31 +1805,86 @@ export default function POS() {
     try {
       const rawVal = parseFloat(openingAmount);
       const val = isNaN(rawVal) || rawVal < 0 ? 0 : rawVal;
-      const operator = useStore.getState().currentUser || currentUser;
 
-      if (!operator) {
-        setPosError("No se pudo identificar la cuenta operativa.");
-        return;
-      }
       if (!sessionBranchId) {
-        setPosError("Debes seleccionar una sucursal.");
+        setPosError("Debes seleccionar una sucursal");
         return;
       }
 
-      const workerName = operator.name || "Administrador";
-      const workerId = operator.id;
-      const existingSession = useStore.getState().getCurrentSession(sessionBranchId, workerId);
+      const { users } = useStore.getState();
+      const trimmedWorkerName = sessionWorkerName.trim();
 
+      // Flujo obligatorio: seleccionar/buscar el empleado y después validar
+      // su contraseña. Un trabajador normal solo puede seleccionar su propia
+      // identidad; el administrador puede seleccionar cualquier empleado.
+      if (!trimmedWorkerName) {
+        setPosError("Debes buscar y seleccionar tu nombre antes de continuar.");
+        return;
+      }
+
+      const workerToAssign =
+        users.find(u =>
+          u.isActive !== false &&
+          (
+            (u.name || '').trim().toLowerCase() === trimmedWorkerName.toLowerCase() ||
+            u.id === sessionWorkerId
+          )
+        ) || null;
+
+      if (!workerToAssign || workerToAssign.isActive === false) {
+        setPosError("No se encontró un empleado activo con ese nombre. Actualiza el directorio y vuelve a seleccionar.");
+        return;
+      }
+
+      // La cuenta que inició sesión solo identifica al usuario del sistema.
+      // La identidad que opera el POS se determina por el trabajador seleccionado
+      // y se autentica con la contraseña de ESE trabajador.
+      // La sucursal queda limitada a las sucursales asignadas al trabajador seleccionado.
+      const workerBranchIds = new Set(
+        workerToAssign.allowedBranches?.length
+          ? workerToAssign.allowedBranches
+          : (workerToAssign.branchId ? [workerToAssign.branchId] : [])
+      );
+      const permittedBranchIds = currentUser?.role === 'admin'
+        ? new Set((branches || []).map(b => b.id))
+        : workerBranchIds;
+
+      if (!sessionBranchId || !permittedBranchIds.has(sessionBranchId)) {
+        setPosError("El trabajador seleccionado no tiene autorizada esta sucursal.");
+        return;
+      }
+
+      const requiredPassword = (workerToAssign.password || '').trim();
+      const enteredPassword = (sessionPassword || '').trim();
+
+      if (!requiredPassword) {
+        setPosError(`El empleado ${workerToAssign.name || 'empleado'} no tiene contraseña asignada. El administrador debe asignarle una en Configuración -> Usuarios.`);
+        return;
+      }
+
+      // La contraseña SIEMPRE se valida contra el trabajador seleccionado.
+      // También al reanudar un turno que ya estaba abierto.
+      if (enteredPassword !== requiredPassword) {
+        setPosError(`Contraseña incorrecta para ${workerToAssign.name || 'empleado'}. Acceso denegado.`);
+        return;
+      }
+
+      // Si ya existe un turno abierto para ese trabajador/sucursal, reutilizarlo.
+      const existingSession = useStore.getState().getCurrentSession(sessionBranchId, workerToAssign.id);
       if (existingSession) {
         setActiveSessionId(existingSession.id);
         setCurrentBranch(existingSession.branchId);
-        setSessionWorkerName(existingSession.workerName || workerName);
+        setSessionWorkerName(existingSession.workerName || workerToAssign.name || "");
+        setSessionPassword("");
         setOpeningAmount("0");
         setShowOpenShiftModal(false);
-        setPosSuccess("Turno activo recuperado correctamente.");
+        setPosSuccess(`Turno de ${existingSession.workerName || workerToAssign.name || 'Empleado'} ya estaba abierto. Continuando con ese turno.`);
         setTimeout(() => setPosSuccess(""), 3000);
         return;
       }
+
+      const workerName = workerToAssign.name || trimmedWorkerName || currentUser?.name || 'Empleado';
+      const workerId = workerToAssign.id || currentUser?.id || 'emp-1';
 
       const sessionToOpen: CashRegisterSession = {
         id: crypto.randomUUID(),
@@ -1727,6 +1895,7 @@ export default function POS() {
         status: "open",
         userId: workerId,
         workerName,
+        // La identidad operativa es exclusivamente el trabajador autenticado.
         workingEmployeeIds: [workerId]
       };
 
@@ -1734,10 +1903,15 @@ export default function POS() {
       const opened = await openSession(sessionToOpen);
 
       if (!opened) {
-        setPosError("No se pudo abrir el turno. Verifica la sucursal o la conexión.");
+        // openSession ya muestra el motivo del rechazo cuando Supabase lo
+        // devuelve; aquí solo evitamos un falso "turno abierto".
+        setPosError("No se pudo abrir el turno. La sucursal puede tener otro turno abierto o la operación fue rechazada.");
         return;
       }
 
+      // Confirmar que el turno realmente está visible para este terminal.
+      // Si el servidor lo aceptó pero el caché quedó desfasado, recuperar el
+      // snapshot operativo antes de mostrar el POS.
       let verifiedSession =
         useStore.getState().cashSessions.find(s =>
           s.status === 'open' &&
@@ -1757,28 +1931,99 @@ export default function POS() {
       }
 
       if (!verifiedSession) {
+        // Si el servidor aceptó la operación pero aún no llegó el refresh,
+        // no bloqueamos al POS: la sesión devuelta por openSession tiene el ID
+        // oficial y es el registro que debemos activar localmente.
         verifiedSession = useStore.getState().cashSessions.find(
           s => s.id === sessionToOpen.id && s.status === 'open' && !s.deletedAt
         );
       }
 
       if (!verifiedSession) {
-        setPosError("El turno fue procesado, pero esta terminal no pudo confirmarlo. Actualiza y vuelve a intentarlo.");
+        setPosError("El turno fue procesado, pero esta terminal no pudo confirmar el estado del turno. Revisa la conexión y vuelve a abrir con la misma contraseña; no se creará otro turno.");
         return;
       }
 
       setActiveSessionId(verifiedSession.id);
       setOpeningAmount("0");
       setSessionWorkerName(verifiedSession.workerName || workerName);
+      setSessionPassword("");
       setShowOpenShiftModal(false);
-      setPosSuccess("Caja abierta correctamente.");
+      setPosSuccess(`Turno abierto correctamente por ${verifiedSession.workerName || workerName}`);
       setTimeout(() => setPosSuccess(""), 3000);
     } catch (err: any) {
       console.error("[POS] Error inesperado al abrir turno:", err);
-      setPosError(err?.message || "No se pudo abrir el turno.");
+      setPosError(err?.message || "No se pudo abrir el turno. Verifica la conexión y vuelve a intentarlo.");
     } finally {
       setIsOpeningSession(false);
     }
+  };
+
+  const handleJoinExistingSession = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!joiningSessionId) return;
+
+    const targetSession = (activeCashSessions || []).find(s => s.id === joiningSessionId && s.status === 'open' && !s.deletedAt);
+    if (!targetSession) {
+      setPosError("Ese turno ya no está abierto. Actualiza la pantalla y selecciona otro trabajador.");
+      return;
+    }
+
+    const targetUser = (users || []).find(u =>
+      u.id === targetSession.userId ||
+      (u.name || '').trim().toLowerCase() === (targetSession.workerName || '').trim().toLowerCase()
+    );
+    if (!targetUser) {
+      setPosError("No se pudo identificar al trabajador dueño del turno.");
+      return;
+    }
+
+    if (currentUser?.role !== 'admin') {
+      const assignedBranchId = currentUser?.branchId ||
+        (currentUser?.allowedBranches?.length === 1 ? currentUser.allowedBranches[0] : null);
+      const ownIdentity = targetSession.userId === currentUser?.id ||
+        targetSession.workingEmployeeIds?.includes(currentUser?.id || '');
+      const ownBranch = !assignedBranchId || targetSession.branchId === assignedBranchId;
+      if (!ownIdentity || !ownBranch) {
+        setPosError('Una cuenta PALMYRA solo puede reanudar su propio turno en su almacén asignado.');
+        return;
+      }
+    }
+
+    const targetBranchIds = new Set(
+      targetUser.allowedBranches?.length
+        ? targetUser.allowedBranches
+        : (targetUser.branchId ? [targetUser.branchId] : [])
+    );
+
+    if (targetBranchIds.size > 0 && !targetBranchIds.has(targetSession.branchId) && currentUser?.role !== 'admin') {
+      setPosError("El trabajador del turno no tiene autorizada esa sucursal.");
+      return;
+    }
+
+    const requiredPassword = (targetUser.password || '').trim();
+    const enteredPassword = (joiningSessionPassword || '').trim();
+
+    if (!requiredPassword) {
+      setPosError(`El empleado ${targetUser.name || 'empleado'} no tiene contraseña asignada. El administrador debe asignarle una.`);
+      return;
+    }
+
+    if (enteredPassword !== requiredPassword) {
+      setPosError(`Contraseña incorrecta para ${targetUser.name || 'empleado'}. Acceso denegado.`);
+      return;
+    }
+
+    // Reanudar no convierte la cuenta que inició sesión en el trabajador del turno.
+    // La identidad operativa sigue siendo targetSession.userId.
+    setActiveSessionId(targetSession.id);
+    setSessionWorkerName(targetUser.name || targetSession.workerName || "");
+    setSessionPassword("");
+    setCurrentBranch(targetSession.branchId);
+    setJoiningSessionId(null);
+    setPosError("");
+    setPosSuccess(`Turno de ${targetSession.workerName || 'Empleado'} reanudado correctamente.`);
+    setTimeout(() => setPosSuccess(""), 3000);
   };
 
   const handleAddCustomer = (e: React.FormEvent) => {
@@ -1822,7 +2067,67 @@ export default function POS() {
       )}
       {!currentSession && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4 overflow-y-auto space-y-4">
-          
+          {joiningSessionId ? (
+            /* Modal Formulario de Ingreso a Turno Abierto Existente */
+            <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-[2rem] shadow-2xl text-center max-w-sm w-full animate-in zoom-in-95 border border-white/20">
+              <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950/40 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Lock className="w-6 h-6 text-amber-600" />
+              </div>
+              <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight leading-none mb-1">
+                Reanudar Turno Abierto
+              </h3>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-4">
+                Turno de {(activeCashSessions || []).find(s => s.id === joiningSessionId)?.workerName || 'Empleado'}
+              </p>
+
+              {posError && (
+                <div className="mb-2 p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold text-left flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span className="text-[11px] leading-tight">{posError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleJoinExistingSession} className="space-y-3.5">
+                <div className="text-left">
+                  <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                    Contraseña del Empleado del Turno
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={joiningSessionPassword}
+                    onChange={e => {
+                      setJoiningSessionPassword(e.target.value);
+                      setPosError("");
+                    }}
+                    placeholder="Ingresa la contraseña"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 dark:bg-slate-800 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJoiningSessionId(null);
+                      setJoiningSessionPassword("");
+                      setPosError("");
+                    }}
+                    className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-[10px] uppercase tracking-wider transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="py-2.5 bg-rose-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-[10px] uppercase tracking-wider transition-all shadow-sm"
+                  >
+                    Entrar al Turno
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : (
+            <>
               {lastClosedSession && !showOpenShiftModal ? (
                 /* Pantalla visual de Turno Finalizado / Cierre */
                 <div className="bg-white p-5 sm:p-6 rounded-[2rem] shadow-2xl text-center max-w-md w-full animate-in zoom-in-95 border border-white/20 my-auto">
@@ -1883,13 +2188,23 @@ export default function POS() {
                       Abrir Nuevo Turno / Caja
                     </button>
 
-                    <button 
-                      type="button"
-                      onClick={() => navigate('/')}
-                      className="w-full py-2 bg-slate-100 text-slate-600 rounded-xl font-black text-[8px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
-                    >
-                      Volver al Menú Principal
-                    </button>
+                    {currentUser?.role === 'admin' ? (
+                      <button 
+                        type="button"
+                        onClick={() => navigate('/')}
+                        className="w-full py-2 bg-slate-100 text-slate-600 rounded-xl font-black text-[8px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
+                      >
+                        Volver al Menú Principal
+                      </button>
+                    ) : (
+                      <button 
+                        type="button"
+                        onClick={() => logout()}
+                        className="w-full py-2 bg-slate-100 text-slate-600 rounded-xl font-black text-[8px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
+                      >
+                        Cerrar Sesión del Empleado
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1933,40 +2248,198 @@ export default function POS() {
 
                   <form onSubmit={handleOpenSession} className="space-y-2.5">
                     <div className="text-left space-y-2">
+                      {!false && (
                       <div>
                         <label className="block text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                          Cuenta operativa
+                          Seleccionar Empleado / Empleado del Turno
                         </label>
-                        <div className="w-full px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-black text-slate-900">
-                          {currentUser?.name || 'Administrador'}
+                        <div className="space-y-1.5">
+                          <div className="relative" ref={employeePickerRef}>
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                              <input
+                                type="text"
+                                value={employeePickerOpen ? employeePickerSearch : sessionWorkerName}
+                                onFocus={() => {
+                                  if (!employeePickerOpen) {
+                                    setEmployeePickerSearch("");
+                                  }
+                                  setEmployeePickerOpen(true);
+                                }}
+                                onChange={e => {
+                                  setEmployeePickerSearch(e.target.value);
+                                  setSessionWorkerName('');
+                                  setSessionPassword('');
+                                  setPosError('');
+                                  setEmployeePickerOpen(true);
+                                }}
+                                placeholder="Presiona y busca el nombre del empleado..."
+                                className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px] font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                                autoComplete="off"
+                              />
+                              {employeePickerOpen ? (
+                                <button
+                                  type="button"
+                                  aria-label="Cerrar buscador de empleados"
+                                  title="Cerrar buscador"
+                                  onMouseDown={e => e.preventDefault()}
+                                  onClick={() => {
+                                    setEmployeePickerOpen(false);
+                                    setEmployeePickerSearch("");
+                                  }}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              ) : (
+                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                              )}
+                            </div>
+
+                            {employeePickerOpen && (
+                              <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
+                                <div className="max-h-[30vh] overflow-y-auto custom-scrollbar p-1">
+                                  {(users || [])
+                                    .filter(u => u.isActive !== false)
+                                    .filter(u => {
+                                      const q = employeePickerSearch.trim().toLowerCase();
+                                      return !q || (u.name || '').toLowerCase().includes(q);
+                                    })
+                                    .map(u => {
+                                      const isSelected = sessionWorkerName === (u.name || '');
+                                      const isSelectedEmployee = false;
+                                      const open = openSessionForWorker(u.id);
+                                      return (
+                                        <button
+                                          key={u.id}
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            const workerName = (u.name || '').trim();
+                                            setSessionWorkerName(workerName);
+                                            setSessionWorkerId(u.id);
+                                            setEmployeePickerSearch(workerName);
+                                            setEmployeePickerOpen(false);
+                                            setSessionPassword('');
+                                            if (u.branchId) setSessionBranchId(u.branchId);
+                                            else if (u.branchId) setSessionBranchId(u.branchId);
+                                            else if ((u.allowedBranches || []).length === 1) setSessionBranchId(u.allowedBranches![0]);
+                                            setPosError('');
+                                          }}
+                                          className={cn(
+                                            "w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left transition-colors",
+                                            isSelected ? "bg-rose-100 text-rose-900" : "hover:bg-slate-50 text-slate-900"
+                                          )}
+                                        >
+                                          <div className="min-w-0">
+                                            <span className="block text-[10px] sm:text-[11px] font-black uppercase tracking-tight leading-tight whitespace-normal break-words">
+                                              {u.name || 'Trabajador'}
+                                            </span>
+                                            <span className={cn(
+                                              "block text-[7px] font-black uppercase tracking-wider mt-0.5",
+                                              u.role === 'admin' ? "text-rose-700" : "text-slate-400"
+                                            )}>
+                                              {u.role === 'admin' ? "ADMINISTRADOR" : "EMPLEADO"}
+                                            </span>
+                                          </div>
+                                          <span className={cn(
+                                            "shrink-0 px-1.5 py-0.5 rounded-md border text-[7px] font-black uppercase tracking-wider",
+                                            open ? "bg-emerald-100 border-emerald-300 text-emerald-700" : "bg-slate-100 border-slate-200 text-slate-400"
+                                          )}>
+                                            {open ? "ABIERTO" : "DISPONIBLE"}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  {!(users || []).some(u => {
+                                    const q = employeePickerSearch.trim().toLowerCase();
+                                    return u.isActive !== false && (!q || (u.name || '').toLowerCase().includes(q));
+                                  }) && (
+                                    <div className="px-3 py-4 text-center text-[9px] font-bold text-slate-400 uppercase">
+                                      No se encontraron empleados.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pt-0.5 text-[7px] font-black uppercase tracking-wider">
+                            <span className="inline-flex items-center gap-1 text-rose-700">
+                              <span className="w-2 h-2 rounded-full bg-indigo-600" />
+                              EMPLEADO
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-rose-700">
+                              <span className="w-2 h-2 rounded-full bg-rose-500" />
+                              EMPLEADO PALMYRA
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-emerald-700">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                              TURNO ABIERTO
+                            </span>
+                          </div>
                         </div>
                       </div>
+                      )}
 
+                      <div>
+                        <label className="block text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                          {currentUser?.role === 'admin' ? 'Contraseña del Empleado Seleccionado' : 'Contraseña del Empleado'}
+                        </label>
+                        <input
+                          type="password"
+                          required
+                          autoComplete="current-password"
+                          value={sessionPassword}
+                          onChange={e => setSessionPassword(e.target.value)}
+                          placeholder={detectedWorker ? `Ingresa la contraseña de ${detectedWorker?.name || 'trabajador'}` : "Ingresa la contraseña del trabajador"}
+                          className="w-full px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                        />
+                      </div>
                     </div>
 
-{(allowedBranches || []).length > 0 ? (
+                    {false && (
+                      <div className="p-1.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-1.5 text-left">
+                        <Package className="w-3 h-3 text-amber-600 shrink-0" />
+                        <p className="text-[8px] font-black text-amber-800 uppercase tracking-tight">
+                          Empleado Independiente (PALMYRA) • Almacén exclusivo bloqueado
+                        </p>
+                      </div>
+                    )}
+
+
+                      {(allowedBranches || []).length > 0 ? (
                       <div className="space-y-2.5">
                         <div className="text-left">
                           <div className="flex items-center justify-between mb-1">
                             <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">
                               Sucursal / Almacén a Operar
                             </label>
-
+                            {isBranchLocked && (
+                              <span className="flex items-center gap-1 text-[8px] font-black text-amber-700 uppercase bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300">
+                                <Lock className="w-2.5 h-2.5" /> Bloqueado
+                              </span>
+                            )}
                           </div>
                           <select 
                             value={sessionBranchId}
-
+                            disabled={isBranchLocked}
                             onChange={(e) => setSessionBranchId(e.target.value)}
                             className={cn(
                               "w-full px-4 py-3 border rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none",
-"bg-slate-50 border-slate-100"
+                              isBranchLocked ? "bg-amber-50/70 border-amber-200 cursor-not-allowed text-amber-900 font-black" : "bg-slate-50 border-slate-100"
                             )}
                           >
                             {allowedBranches.map(b => (
                               <option key={b.id} value={b.id}>{b.name}</option>
                             ))}
                           </select>
-
+                          {isBranchLocked && (
+                            <p className="text-[8px] font-bold text-amber-700 mt-1 uppercase">
+                              El vendedor tiene un almacén fijo asignado y no puede vender desde otro almacén.
+                            </p>
+                          )}
                         </div>
                         
                         <div className="text-left">
@@ -2036,18 +2509,71 @@ export default function POS() {
                         <div className="bg-red-50 text-red-600 p-4 rounded-xl text-xs font-bold">
                           No tienes sucursales asignadas.
                         </div>
-                        <button 
-                          type="button"
-                          onClick={() => navigate('/')}
-                          className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
-                        >
-                          Volver al Menú
-                        </button>
+                        {currentUser?.role === 'admin' ? (
+                          <button 
+                            type="button"
+                            onClick={() => navigate('/')}
+                            className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
+                          >
+                            Volver al Menú
+                          </button>
+                        ) : (
+                          <button 
+                            type="button"
+                            onClick={() => logout()}
+                            className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95"
+                          >
+                            Cerrar Sesión
+                          </button>
+                        )}
                       </div>
                     )}
                   </form>
                 </div>
               )}
+
+              {/* Turnos Abiertos en Curso (Evita duplicidad y permite reanudar con contraseña) */}
+              {(() => {
+                // Las cuentas PALMYRA no deben ver ni poder escoger turnos de terceros.
+                if (false) return null;
+                const otherOpenSessions = (activeCashSessions || []).filter(s => s.status === 'open');
+                if (otherOpenSessions.length === 0) return null;
+                return (
+                  <div className="bg-white dark:bg-slate-900 p-4 rounded-[2rem] shadow-xl border border-slate-100 dark:border-slate-800 text-left max-w-sm w-full mt-2 shrink-0">
+                    <span className="text-[8px] font-black uppercase text-indigo-600 tracking-wider flex items-center gap-1.5 mb-2.5">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin-slow text-indigo-500" />
+                      Turnos Abiertos Actualmente
+                    </span>
+                    <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                      {otherOpenSessions.map(s => (
+                        <div key={s.id} className="p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="text-[10px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight block truncate">
+                              {s.workerName || 'Empleado'}
+                            </span>
+                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wide block">
+                              {branches.find(b => b.id === s.branchId)?.name || 'Sucursal'} • ID: {s.id.slice(0, 6)}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setJoiningSessionId(s.id);
+                              setJoiningSessionPassword("");
+                              setPosError("");
+                            }}
+                            className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400 font-black text-[8px] uppercase tracking-wide rounded-lg transition-all active:scale-95 cursor-pointer shrink-0"
+                          >
+                            Reanudar
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
+          )}
         </div>
       )}
 
@@ -3069,7 +3595,11 @@ export default function POS() {
             <span>•</span>
             <span className="truncate max-w-[160px] text-slate-300 flex items-center gap-1.5">
               {branches.find(b => b.id === currentBranchId)?.name || branches[0]?.name || 'Sucursal General'}
-
+              {isBranchLocked && (
+                <span className="flex items-center gap-0.5 bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded text-[8px] border border-amber-500/30">
+                  <Lock className="w-2.5 h-2.5" /> Bloqueado
+                </span>
+              )}
             </span>
           </div>
 
@@ -3843,7 +4373,7 @@ export default function POS() {
                   <input 
                     type="password"
                     autoFocus
-                    placeholder="Confirmación de administrador"
+                    placeholder="Contraseña del Trabajador"
                     value={cancelShiftPassword}
                     onChange={(e) => setCancelShiftPassword(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleCancelShift()}
