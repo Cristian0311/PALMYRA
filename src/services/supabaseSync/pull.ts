@@ -4,7 +4,7 @@ import { normalizeSemanticText } from '../../utils/textUtils';
 import { 
   Product, Category, Branch, InventoryLevel, User, 
   BankCard, Customer, Currency, Transaction, CashRegisterSession,
-  Warranty, ReturnItem, InventoryTransfer, IDNSettlementPrice,
+  Warranty, ReturnItem, InventoryTransfer,
   TimeShift, Quote, BankTransaction, SupplierOrder, InventoryAudit, SalarySettlement, Supplier,
   ReceiptConfig, StoreConfig
 } from '../../types';
@@ -266,16 +266,15 @@ export async function pullGlobalCatalogDataFromSupabase(): Promise<{ success: bo
   const supabase = getSupabase();
   if (!supabase) return { success: false, message: 'Supabase no configurado' };
   try {
-    const [branchesRes, categoriesRes, productsRes, usersRes, currenciesRes, idnRes, settingsRes] = await Promise.all([
+    const [branchesRes, categoriesRes, productsRes, usersRes, currenciesRes, settingsRes] = await Promise.all([
       supabase.from('branches').select('*'),
       supabase.from('categories').select('*'),
       supabase.from('products').select('*').eq('status', 'active'),
       supabase.from('users').select('*').eq('is_active', true),
       supabase.from('currencies').select('*'),
-      supabase.from('idn_settlement_prices').select('*'),
       supabase.from('settings').select('*').eq('id', 'global').maybeSingle()
     ]);
-    const firstError = [branchesRes, categoriesRes, productsRes, usersRes, currenciesRes, idnRes].find(r => r.error)?.error;
+    const firstError = [branchesRes, categoriesRes, productsRes, usersRes, currenciesRes].find(r => r.error)?.error;
     if (firstError) throw firstError;
 
     return {
@@ -308,7 +307,6 @@ export async function pullGlobalCatalogDataFromSupabase(): Promise<{ success: bo
         currencies: (currenciesRes.data || []).map((c:any) => ({
           code:c.code,name:c.name||c.code,symbol:c.symbol||c.code,rateToBase:Number(c.rate_to_base)||1,isBase:Boolean(c.is_base)
         })),
-        idnSettlementPrices: (idnRes.data || []).map((p:any) => ({
           id:p.id,userId:p.user_id,productId:p.product_id,settlementPrice:Number(p.settlement_price)||0
         })),
         settings: settingsRes.data || null
@@ -323,7 +321,7 @@ export async function pullPosBootstrapFromSupabase(branchId?: string): Promise<{
   const supabase = getSupabase();
   if (!supabase) return { success: false, data: null, message: 'Supabase no configurado' };
   try {
-    const [branchesRes, categoriesRes, productsRes, inventoryRes, usersRes, customersRes, currenciesRes, idnRes, txRes, sessionsRes, settingsRes, transferRes, bankCardsRes, bankTxData] = await Promise.all([
+    const [branchesRes, categoriesRes, productsRes, inventoryRes, usersRes, customersRes, currenciesRes, txRes, sessionsRes, settingsRes, transferRes, bankCardsRes, bankTxData] = await Promise.all([
       supabase.from('branches').select('*'),
       supabase.from('categories').select('*'),
       supabase.from('products').select('*').eq('status', 'active'),
@@ -331,7 +329,6 @@ export async function pullPosBootstrapFromSupabase(branchId?: string): Promise<{
       supabase.from('users').select('*').eq('is_active', true),
       supabase.from('customers').select('*').order('name').limit(5000),
       supabase.from('currencies').select('*'),
-      supabase.from('idn_settlement_prices').select('*'),
       branchId ? supabase.from('transactions').select('*').eq('branch_id', branchId).order('created_at', { ascending: false }).limit(250) : supabase.from('transactions').select('*').order('created_at', { ascending: false }).limit(250),
       branchId ? supabase.from('cash_sessions').select('*').eq('branch_id', branchId).order('opened_at', { ascending: false }).limit(12) : supabase.from('cash_sessions').select('*').order('opened_at', { ascending: false }).limit(12),
       supabase.from('settings').select('*').eq('id', 'global').maybeSingle(),
@@ -339,12 +336,12 @@ export async function pullPosBootstrapFromSupabase(branchId?: string): Promise<{
       supabase.from('bank_cards').select('*'),
       fetchAllRows(supabase, 'bank_transactions', 'date')
     ]);
-    const firstError = [branchesRes,categoriesRes,productsRes,inventoryRes,usersRes,customersRes,currenciesRes,idnRes,txRes,sessionsRes,transferRes,bankCardsRes].find(r => r.error)?.error;
+    const firstError = [branchesRes,categoriesRes,productsRes,inventoryRes,usersRes,customersRes,currenciesRes, txRes,sessionsRes,transferRes,bankCardsRes].find(r => r.error)?.error;
     if (firstError) throw firstError;
     const mapProduct = (p:any): Product => ({ id:p.id,name:p.name,sku:p.sku||'',barcode:p.barcode||'',costPrice:Number(p.cost_price)||0,price:Number(p.price)||0,margin:Number(p.margin)||0,categoryId:p.category_id||'',color:p.color||'bg-slate-100 text-slate-700',commissionType:p.commission_type||'percentage',commissionValue:Number(p.commission_value)||0,unit:p.unit||'unidad',status:p.status||'active',minStockAlert:Number(p.min_stock_alert)||5,hasSerial:Boolean(p.has_serial),warrantyDays:Number(p.warranty_days)||0,isKit:Boolean(p.is_kit),kitItems:Array.isArray(p.kit_items)?p.kit_items:[],kitComponents:Array.isArray(p.kit_components)?p.kit_components:(Array.isArray(p.kit_items)?p.kit_items:[]),deviceColor:p.device_color||'',availableSizes:Array.isArray(p.available_sizes)?p.available_sizes:[],availableColors:Array.isArray(p.available_colors)?p.available_colors:[] });
     const mappedProducts = (productsRes.data||[]).map(mapProduct);
     const mapInventory = (i:any): InventoryLevel => ({ id:i.id,productId:i.product_id,branchId:i.branch_id,variantLabel:i.variant_label||undefined,quantity:Number(i.quantity)||0,minQuantity:Number(i.min_quantity)||0 });
-    const mapUser = (u:any): User => ({ id:u.id,name:u.name,email:u.email||'',password:u.password||'',role:u.role||'employee',commissionRate:Number(u.commission_rate)||0,baseSalary:Number(u.base_salary)||0,salesGoal:Number(u.sales_goal)||0,branchId:u.branch_id||undefined,allowedBranches:Array.isArray(u.allowed_branches)?u.allowed_branches:undefined,permissions:Array.isArray(u.permissions)?u.permissions:undefined,isActive:u.is_active!==false,isIndependent:u.is_independent===true,assignedBranchId:u.assigned_branch_id||undefined });
+    const mapUser = (u:any): User => ({ id:u.id,name:u.name,email:u.email||'',password:u.password||'',role:u.role||'employee',commissionRate:Number(u.commission_rate)||0,baseSalary:Number(u.base_salary)||0,salesGoal:Number(u.sales_goal)||0,branchId:u.branch_id||undefined,allowedBranches:Array.isArray(u.allowed_branches)?u.allowed_branches:undefined,permissions:Array.isArray(u.permissions)?u.permissions:undefined,isActive:u.is_active!==false });
     const mapCustomer = (c:any): Customer => ({ id:c.id,name:c.name,email:c.email||'',phone:c.phone||'',taxId:c.tax_id||'' });
     const mapTx = (t:any): Transaction => ({ id:t.id,date:t.date,total:Number(t.total)||0,tax:Number(t.tax)||0,discount:Number(t.discount)||0,branchId:t.branch_id,customerId:t.customer_id,userId:t.user_id,status:t.status||'completed',ncf:t.ncf||undefined,ncfType:t.ncf_type||undefined,notes:t.notes||'',paymentMethod:t.payment_method||'cash',sessionId:t.session_id,changeGiven:Number(t.change_given)||0,items:normalizeTransactionItems(t.items, mappedProducts),payments:Array.isArray(t.payments)?t.payments:[],changePayments:Array.isArray(t.change_payments)?t.change_payments:[],sellerEmployeeIds:Array.isArray(t.seller_employee_ids)?t.seller_employee_ids:[],deletedAt:t.deleted_at||undefined,deletedBy:t.deleted_by||undefined,deleteReason:t.delete_reason||undefined });
     const mapSession = mapCashSessionFromRemote;
@@ -353,7 +350,6 @@ export async function pullPosBootstrapFromSupabase(branchId?: string): Promise<{
       categories:(categoriesRes.data||[]).map((c:any)=>({id:c.id,name:c.name,department:c.department||'',color:c.color})),
       products:(productsRes.data||[]).map(mapProduct), inventory:(inventoryRes.data||[]).map(mapInventory), users:(usersRes.data||[]).map(mapUser),
       customers:(customersRes.data||[]).map(mapCustomer), currencies:(currenciesRes.data||[]).map((c:any)=>({code:c.code,name:c.name||c.code,symbol:c.symbol||c.code,rateToBase:Number(c.rate_to_base)||1,isBase:Boolean(c.is_base)})),
-      idnSettlementPrices:(idnRes.data||[]).map((p:any)=>({id:p.id,userId:p.user_id,productId:p.product_id,settlementPrice:Number(p.settlement_price)||0})),
       transactions:(txRes.data||[]).map(mapTx), cashSessions:(sessionsRes.data||[]).map(mapSession),
       transfers:(transferRes.data||[]).map((t:any)=>({id:t.id,operationId:t.operation_id||t.id,productId:t.product_id,productName:t.product_name||'Producto',fromBranchId:t.from_branch_id,fromBranchName:t.from_branch_name||'Sucursal Origen',toBranchId:t.to_branch_id,toBranchName:t.to_branch_name||'Sucursal Destino',variantLabel:t.variant_label||'Producto Base',quantity:Number(t.quantity)||0,variants:Array.isArray(t.variants)?t.variants:[],date:t.date,userId:t.user_id,status:t.status||'completed'})),
       bankCards:(bankCardsRes.data||[]).map((bc:any)=>({id:bc.id,name:bc.name||bc.card_holder||bc.bank_name||'Tarjeta Bancaria',bank:bc.bank||bc.bank_name||'Banco',bankName:bc.bank_name||bc.bank||'Banco',cardHolder:bc.card_holder||bc.name||'Titular',accountNumber:bc.account_number||bc.last_four_digits||'',lastFour:bc.last_four_digits||(bc.account_number?String(bc.account_number).slice(-4):''),lastFourDigits:bc.last_four_digits||'',phone:bc.phone||'',currency:bc.currency||'CUP',balance:Number(bc.balance)||0,color:bc.color||'from-blue-600 to-indigo-800',isActive:bc.is_active!==false})),
@@ -482,28 +478,10 @@ export async function pullAllFromSupabase(): Promise<{ data: any; result: SyncRe
           allowedBranches: Array.isArray(u.allowed_branches) ? u.allowed_branches : undefined,
           permissions: Array.isArray(u.permissions) ? u.permissions : undefined,
           isActive: u.is_active !== false,
-          isIndependent: u.is_independent === true,
-          assignedBranchId: u.assigned_branch_id || undefined
         }));
       }
     } catch (e: any) {
       errors.push(`Usuarios: ${e.message}`);
-    }
-
-    // 6. IDN Settlement Prices
-    try {
-      const { data, error } = await supabase.from('idn_settlement_prices').select('*');
-      if (error) throw error;
-      if (data && Array.isArray(data)) {
-        fetchedData.idnSettlementPrices = data.map((p: any): IDNSettlementPrice => ({
-          id: p.id,
-          userId: p.user_id,
-          productId: p.product_id,
-          settlementPrice: Number(p.settlement_price) || 0
-        }));
-      }
-    } catch (e: any) {
-      errors.push(`Precios de Liquidación IDN: ${e.message}`);
     }
 
     // 6. Bank Cards
@@ -869,7 +847,6 @@ export async function pullAllFromSupabase(): Promise<{ data: any; result: SyncRe
       currencies: fetchedData.currencies?.length || 0,
       transactions: fetchedData.transactions?.length || 0,
       cashSessions: fetchedData.cashSessions?.length || 0,
-      idnSettlementPrices: fetchedData.idnSettlementPrices?.length || 0,
       suppliers: fetchedData.suppliers?.length || 0,
       supplierOrders: fetchedData.supplierOrders?.length || 0
     };
