@@ -1930,13 +1930,10 @@ export default function POS() {
       return;
     }
 
-    if (false) {
-  
-    }
-
     const targetBranchIds = new Set(
-        ? [targetUser.branchId]
-        : (targetUser.allowedBranches || [])
+      targetUser.allowedBranches?.length
+        ? targetUser.allowedBranches
+        : (targetUser.branchId ? [targetUser.branchId] : [])
     );
 
     if (targetBranchIds.size > 0 && !targetBranchIds.has(targetSession.branchId) && currentUser?.role !== 'admin') {
