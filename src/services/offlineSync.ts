@@ -539,42 +539,6 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
     case 'inventory_audit': { const d=data; const {error}=await supabase.from('inventory_audits').upsert({id:d.id,date:d.date,branch_id:d.branchId,user_id:d.userId,status:d.status,items:d.items||[],notes:d.notes}); if(error) throw error; return true; }
     case 'transaction': {
       const transaction = data as Transaction;
-      // atómica/idempotente que el POS normal para descontar stock.
-      // Una liquidación sin productos sigue siendo solo administrativa.
-        const { error } = await supabase.from('transactions').upsert({
-          id: transaction.id, date: transaction.date, total: transaction.total,
-          tax: transaction.tax || 0, discount: transaction.discount || 0,
-          branch_id: transaction.branchId, customer_id: transaction.customerId || null,
-          user_id: transaction.userId || null, status: transaction.status || 'completed',
-          notes: transaction.notes || '', payment_method: transaction.paymentMethod || 'cash',
-          session_id: transaction.sessionId || null, change_given: transaction.changeGiven || 0,
-          items: transaction.items || [], payments: transaction.payments || [],
-          change_payments: transaction.changePayments || [], seller_employee_ids: transaction.sellerEmployeeIds || [],
-          ncf: transaction.ncf || null, ncf_type: transaction.ncfType || null,
-          deleted_at: transaction.deletedAt || null, deleted_by: transaction.deletedBy || null,
-          delete_reason: transaction.deleteReason || null
-        });
-        if (error) throw error;
-        const { data: persistedIdn, error: verifyIdnError } = await supabase
-          .from('transactions')
-          .select('id,status,total,ncf,ncf_type')
-          .eq('id', transaction.id)
-          .maybeSingle();
-        if (verifyIdnError) throw verifyIdnError;
-        if (!persistedIdn || persistedIdn.id !== transaction.id || persistedIdn.status === 'refunded' || persistedIdn.status === 'cancelled') {
-        }
-        if ((transaction.ncf || null) !== (persistedIdn.ncf || null) || (transaction.ncfType || null) !== (persistedIdn.ncf_type || null)) {
-        }
-        useStore.setState(state => {
-          const exists = (state.transactions || []).some(t => t.id === transaction.id);
-          return {
-            transactions: exists
-              ? (state.transactions || []).map(t => t.id === transaction.id ? { ...t, ...transaction, offlinePending: false } : t)
-              : [{ ...transaction, offlinePending: false }, ...(state.transactions || [])]
-          };
-        });
-        return true;
-      }
       const res = await callProcessTransactionRPC(transaction);
       if (!res.success) {
         // Solo códigos de negocio explícitamente irreversibles se consideran
