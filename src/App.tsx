@@ -70,6 +70,7 @@ export default function App() {
   const { currentUser, isInitialized, restoreTransactionsFromBackup, currentBranchId } = useStore(useShallow((state) => ({ currentUser: state.currentUser, isInitialized: state.isInitialized, restoreTransactionsFromBackup: state.restoreTransactionsFromBackup, currentBranchId: state.currentBranchId })));
   const [authBootstrapping, setAuthBootstrapping] = useState(true);
   const [accessState, setAccessState] = useState<"loading" | "signed_out" | "needs_onboarding" | "ready" | "blocked">("loading");
+  const can = (permission: string) => currentUser?.role === "admin" || currentUser?.permissions?.includes(permission) === true;
 
   const hydrateAuth = async () => {
     setAuthBootstrapping(true);
@@ -240,17 +241,17 @@ export default function App() {
               <Layout>
                 <Suspense fallback={<PageLoading />}>
                   <Routes>
-                    <Route path="/" element={currentUser.role === 'admin' ? <Dashboard /> : <Navigate to="/pos" replace />} />
+                    <Route path="/" element={can("reports.view") ? <Dashboard /> : <Navigate to="/pos" replace />} />
                     <Route path="/pos" element={<POS />} />
-                    <Route path="/transfers" element={currentUser.role === 'admin' ? <Transfers /> : <Navigate to="/pos" replace />} />
-                    <Route path="/inventory" element={currentUser.role === 'admin' ? <Inventory /> : <Navigate to="/pos" replace />} />
-                    <Route path="/inventory-audit" element={currentUser.role === 'admin' ? <InventoryAudit /> : <Navigate to="/pos" replace />} />
-                    <Route path="/suppliers" element={currentUser.role === 'admin' ? <Suppliers /> : <Navigate to="/pos" replace />} />
-                    <Route path="/banks" element={currentUser.role === 'admin' ? <Banks /> : <Navigate to="/pos" replace />} />
-                    <Route path="/returns" element={currentUser.role === 'admin' ? <Returns /> : <Navigate to="/pos" replace />} />
-                    <Route path="/customers" element={currentUser.role === 'admin' ? <Customers /> : <Navigate to="/pos" replace />} />
-                    <Route path="/reports" element={currentUser.role === 'admin' ? <Reports /> : <Navigate to="/pos" replace />} />
-                    <Route path="/settings" element={currentUser.role === 'admin' ? <Settings /> : <Navigate to="/pos" replace />} />
+                    <Route path="/transfers" element={can("inventory.manage") ? <Transfers /> : <Navigate to="/pos" replace />} />
+                    <Route path="/inventory" element={can("inventory.manage") ? <Inventory /> : <Navigate to="/pos" replace />} />
+                    <Route path="/inventory-audit" element={can("inventory.manage") ? <InventoryAudit /> : <Navigate to="/pos" replace />} />
+                    <Route path="/suppliers" element={can("suppliers.manage") ? <Suppliers /> : <Navigate to="/pos" replace />} />
+                    <Route path="/banks" element={can("settings.manage") ? <Banks /> : <Navigate to="/pos" replace />} />
+                    <Route path="/returns" element={can("pos.access") ? <Returns /> : <Navigate to="/pos" replace />} />
+                    <Route path="/customers" element={can("customers.manage") ? <Customers /> : <Navigate to="/pos" replace />} />
+                    <Route path="/reports" element={can("reports.view") ? <Reports /> : <Navigate to="/pos" replace />} />
+                    <Route path="/settings" element={can("settings.manage") ? <Settings /> : <Navigate to="/pos" replace />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </Suspense>
