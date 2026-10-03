@@ -302,7 +302,6 @@ export async function pullGlobalCatalogDataFromSupabase(): Promise<{ success: bo
           baseSalary:Number(u.base_salary)||0,salesGoal:Number(u.sales_goal)||0,
           branchId:u.branch_id||undefined,allowedBranches:Array.isArray(u.allowed_branches)?u.allowed_branches:undefined,
           permissions:Array.isArray(u.permissions)?u.permissions:undefined,isActive:u.is_active!==false,
-          isIndependent:u.is_independent===true,assignedBranchId:u.assigned_branch_id||undefined
         })),
         currencies: (currenciesRes.data || []).map((c:any) => ({
           code:c.code,name:c.name||c.code,symbol:c.symbol||c.code,rateToBase:Number(c.rate_to_base)||1,isBase:Boolean(c.is_base)
