@@ -30,7 +30,7 @@ export async function signUpSaaSAccount(fullName: string, email: string, passwor
     password,
     options: {
       data: { full_name: fullName.trim(), product: 'PALMYRA POS' },
-      emailRedirectTo: `${origin}/login`
+      emailRedirectTo: `${origin}/auth`
     }
   });
 }
@@ -58,7 +58,8 @@ export async function getAuthenticatedUser() {
   return data.user || null;
 }
 
-export async function loadSaaSContext(): Promise<SaaSContext | null> {
+export async function loadSaaSContext(forceRefresh = false): Promise<SaaSContext | null> {
+  void forceRefresh;
   const supabase = getSupabase();
   if (!supabase) return null;
 
@@ -92,19 +93,21 @@ export async function loadSaaSContext(): Promise<SaaSContext | null> {
     };
   }
 
-  const [{ data: company }, { data: userRole }, { data: locations }, { data: employee }, { data: subscription }] = await Promise.all([
+  const [{ data: company }, { data: userRole }, { data: locations }, { data: employee }, { data: subscription }, { data: permissionRows }] = await Promise.all([
     supabase.from('companies').select('id,name,slug,account_status,default_currency_code').eq('id',companyId).maybeSingle(),
     supabase.from('user_roles').select('role_id,roles!inner(key,name)').eq('user_id',authUser.id).eq('company_id',companyId).maybeSingle(),
     supabase.from('user_locations').select('warehouse_id,is_default').eq('user_id',authUser.id).eq('company_id',companyId).order('is_default',{ascending:false}),
     supabase.from('employees').select('id,full_name,base_salary,active').eq('user_id',authUser.id).eq('company_id',companyId).maybeSingle(),
-    supabase.from('subscriptions').select('id,status,plan_id,current_period_end,plans!inner(code,name,limits,features)').eq('company_id',companyId).order('updated_at',{ascending:false}).maybeSingle()
+    supabase.from('subscriptions').select('id,status,plan_id,current_period_end,plans!inner(code,name,limits,features)').eq('company_id',companyId).order('updated_at',{ascending:false}).maybeSingle(),
+    supabase.from('role_permissions').select('permissions!inner(key)').eq('company_id',companyId).eq('role_id', (userRole as any)?.role_id || '00000000-0000-0000-0000-000000000000')
   ]);
 
   const roleKey = (userRole as any)?.roles?.key || (membership?.is_owner ? 'admin' : 'employee');
   const warehouseIds = (locations || []).map((row:any) => row.warehouse_id).filter(Boolean);
-  const permissions = roleKey === 'admin'
-    ? ['pos_access','reports_access','inventory_access','admin_access','cash_audit']
-    : ['pos_access'];
+  const granularPermissions = (permissionRows || []).map((row:any) => (row as any)?.permissions?.key).filter(Boolean);
+  const permissions = granularPermissions.length > 0 ? granularPermissions : (roleKey === 'admin'
+    ? ['pos.access','reports.view','inventory.manage','products.manage','customers.manage','employees.manage','suppliers.manage','settings.manage','roles.manage','cash.open']
+    : ['pos.access']);
 
   const user: User = {
     id: authUser.id,
