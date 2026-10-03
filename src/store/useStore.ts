@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { Branch, Category, Product, InventoryLevel, CartItem, Transaction, ReturnItem, Currency, Customer, CashRegisterSession, User, PendingOrder, SalarySettlement, InventoryTransfer, Warranty, CashMovement, Supplier, SupplierOrder, InventoryAudit, FiscalConfig, DemandForecast, BankCard, BankTransaction, IDNSettlementPrice } from '../types';
+import { Branch, Category, Product, InventoryLevel, CartItem, Transaction, ReturnItem, Currency, Customer, CashRegisterSession, User, PendingOrder, SalarySettlement, InventoryTransfer, Warranty, CashMovement, Supplier, SupplierOrder, InventoryAudit, FiscalConfig, DemandForecast, BankCard, BankTransaction } from '../types';
 import { generateId, generateReadableId } from '../lib/utils';
 import { 
   pullAllFromSupabase, pullPosBootstrapFromSupabase, pullBranchInventoryFromSupabase, pullBranchOperationalDataFromSupabase, pullGlobalCatalogDataFromSupabase, pullBankDataFromSupabase, pushProductToSupabase, 
   pushTransactionToSupabase, pushCashSessionToSupabase, pushWarrantyToSupabase, pushUserToSupabase, deleteUserFromSupabase, 
-  pushIDNSettlementPriceToSupabase, deleteIDNSettlementPriceFromSupabase, SyncResult,
+  SyncResult,
   pushBranchToSupabase, deleteBranchFromSupabase, pushCategoryToSupabase, deleteCategoryFromSupabase, deleteProductFromSupabase,
   pushCurrencyToSupabase, clearSupabaseData, pushBankCardToSupabase, updateBankCardMetadataToSupabase, setBankCardBalanceToSupabase, deleteBankCardFromSupabase, pushBankTransactionToSupabase, pushAllToSupabase,
   pushSupplierToSupabase, deleteSupplierFromSupabase, pushSupplierOrderToSupabase, pushCustomerToSupabase,
@@ -27,7 +27,7 @@ import {
 } from './storeInitialData';
 
 // --- Definición del Store ---
-const NCF_RANGE_STORAGE_KEY = 'omnisync-pos-ncf-ranges-v2';
+const NCF_RANGE_STORAGE_KEY = 'palmyra-pos-ncf-ranges-v2';
 type LocalNcfRange = {
   rangeId: string;
   fiscalType: string;
@@ -41,7 +41,7 @@ let ncfRangesMemory: Record<string, LocalNcfRange> = {};
 function getNcfDeviceId(): string {
   if (typeof window === 'undefined') return 'server';
   try {
-    const key = 'omnisync-pos-device-id';
+    const key = 'palmyra-pos-device-id';
     const existing = window.localStorage.getItem(key);
     if (existing) return existing;
     const created = crypto.randomUUID();
@@ -79,7 +79,7 @@ function invalidateNcfRange(fiscalType: string): void {
 
 async function withNcfLock<T>(fn: () => Promise<T>): Promise<T> {
   const locks = typeof navigator !== 'undefined' ? (navigator as any).locks : null;
-  if (locks?.request) return locks.request('omnisync-ncf-allocation', { mode: 'exclusive' }, fn);
+  if (locks?.request) return locks.request('palmyra-ncf-allocation', { mode: 'exclusive' }, fn);
   return fn();
 }
 
@@ -337,7 +337,6 @@ export const useStore = create<AppState>()(
       lastSyncTime: null,
       syncResult: null,
       users: INITIAL_USERS,
-      idnSettlementPrices: [],
       currentUser: null,
   login: async (email, pass) => {
     try {
@@ -413,7 +412,6 @@ export const useStore = create<AppState>()(
     
     set({
       users: minUsers,
-      idnSettlementPrices: [],
       currentUser: null,
       branches: minBranches,
       currentBranchId: '',
@@ -463,7 +461,6 @@ export const useStore = create<AppState>()(
       patch.salarySettlements = []; patch.inventoryAudits = []; patch.bankTransactions = [];
       patch.timeShifts = []; patch.notifications = [];
     }
-    if (selected.has('catalog')) { patch.products = []; patch.categories = []; patch.idnSettlementPrices = []; }
     if (selected.has('customers')) patch.customers = [];
     if (selected.has('suppliers') || selected.has('purchases')) {
       if (selected.has('suppliers')) patch.suppliers = [];
@@ -552,7 +549,6 @@ export const useStore = create<AppState>()(
         quotes: state.quotes,
         timeShifts: state.timeShifts,
         pendingOrders: state.pendingOrders,
-        idnSettlementPrices: state.idnSettlementPrices,
         receiptConfig: state.receiptConfig,
         catalogConfig: state.catalogConfig,
         storeConfig: state.storeConfig
@@ -603,7 +599,6 @@ export const useStore = create<AppState>()(
         quotes: get().quotes,
         timeShifts: get().timeShifts,
         pendingOrders: get().pendingOrders,
-        idnSettlementPrices: get().idnSettlementPrices,
         receiptConfig: get().receiptConfig,
         catalogConfig: get().catalogConfig,
         storeConfig: get().storeConfig
@@ -634,7 +629,6 @@ export const useStore = create<AppState>()(
         quotes: d.quotes || [],
         timeShifts: d.timeShifts || [],
         pendingOrders: d.pendingOrders || [],
-        idnSettlementPrices: d.idnSettlementPrices || [],
         receiptConfig: d.receiptConfig || get().receiptConfig,
         catalogConfig: d.catalogConfig || get().catalogConfig,
         storeConfig: d.storeConfig || get().storeConfig
@@ -697,26 +691,6 @@ export const useStore = create<AppState>()(
     }));
     const updated = get().users.find(u => u.id === id);
     if (updated) pushUserToSupabase(updated);
-  },
-
-  addIDNSettlementPrice: (price) => {
-    set((state) => ({
-      idnSettlementPrices: [...state.idnSettlementPrices, price]
-    }));
-    pushIDNSettlementPriceToSupabase(price);
-  },
-  updateIDNSettlementPrice: (id, price) => {
-    set((state) => ({
-      idnSettlementPrices: state.idnSettlementPrices.map(p => p.id === id ? { ...p, ...price } : p)
-    }));
-    const updated = get().idnSettlementPrices.find(p => p.id === id);
-    if (updated) pushIDNSettlementPriceToSupabase(updated);
-  },
-  deleteIDNSettlementPrice: (id) => {
-    set((state) => ({
-      idnSettlementPrices: state.idnSettlementPrices.filter(p => p.id !== id)
-    }));
-    deleteIDNSettlementPriceFromSupabase(id);
   },
 
   currencies: INITIAL_CURRENCIES,
@@ -1518,42 +1492,6 @@ export const useStore = create<AppState>()(
     // una venta creada justo después de abrir/recargar el POS compita con la
     // migración inicial de IndexedDB y quede fuera del snapshot durable.
     await waitForOfflineQueueReady();
-
-    // Una liquidación IDN con productos representa una venta física que acaba
-    // de ocurrir y debe usar el mismo flujo atómico de ventas normales.
-    // Una liquidación IDN sin líneas es solo un registro administrativo.
-    if (transaction.notes === 'LIQUIDACION_IDN' && (transaction.items || []).length === 0) {
-      const durableTransaction = { ...transaction, offlinePending: true };
-      await enqueueOfflineItem('transaction', durableTransaction, transaction.id);
-
-      if (typeof navigator !== 'undefined' && navigator.onLine) {
-        try {
-          const synced = await pushTransactionToSupabase(durableTransaction);
-          if (!synced) throw new Error('Supabase no confirmó la liquidación IDN');
-          removeFromOfflineQueueByTransactionId(transaction.id);
-          set((state) => ({
-            transactions: [{ ...transaction, offlinePending: false }, ...state.transactions.filter(t => t.id !== transaction.id)],
-            cart: [],
-            currentCustomerId: undefined
-          }));
-        } catch (err) {
-          console.warn('[processTransaction] Liquidación IDN pendiente; conservada localmente para reintento:', err);
-          set((state) => ({
-            transactions: [{ ...durableTransaction }, ...state.transactions.filter(t => t.id !== transaction.id)],
-            cart: [],
-            currentCustomerId: undefined
-          }));
-        }
-      } else {
-        set((state) => ({
-          transactions: [{ ...durableTransaction }, ...state.transactions.filter(t => t.id !== transaction.id)],
-          cart: [],
-          currentCustomerId: undefined
-        }));
-      }
-      await flushLocalStateStorage();
-      return true;
-    }
 
     // Primero persistimos la operación en la cola durable. Así, aunque la
     // pestaña se cierre durante el cobro, existe una operación reintentable.
@@ -3330,7 +3268,6 @@ export const useStore = create<AppState>()(
           currencies: d.currencies?.length
             ? mergeById(d.currencies || [], state.currencies || [], pendingCurrencyCodes)
             : state.currencies,
-          idnSettlementPrices: mergeById(d.idnSettlementPrices || [], state.idnSettlementPrices || [], pendingIdnIds).filter(x => !pendingIdnDeleteIds.has(x.id)),
           fiscalConfigs: Array.isArray(pendingStoreConfig?.fiscalConfigs)
             ? pendingStoreConfig.fiscalConfigs
             : (Array.isArray(d.settings?.store_config?.fiscalConfigs)
@@ -3449,7 +3386,6 @@ export const useStore = create<AppState>()(
         users: mergeById(d.users, state.users || []),
         customers: mergeById(d.customers, state.customers || []),
         currencies: d.currencies?.length ? d.currencies : state.currencies,
-        idnSettlementPrices: mergeById(d.idnSettlementPrices, state.idnSettlementPrices || []),
         fiscalConfigs: Array.isArray(queuedStoreConfig?.fiscalConfigs)
           ? queuedStoreConfig.fiscalConfigs
           : (Array.isArray(d.settings?.store_config?.fiscalConfigs) ? d.settings.store_config.fiscalConfigs : state.fiscalConfigs),
@@ -3822,7 +3758,6 @@ export const useStore = create<AppState>()(
           const mergedTimeShifts = replaceRemoteRecords(data.timeShifts, state.timeShifts || [], new Set(getOfflineQueue().filter(i => i.type === 'time_shift').map(i => String(i.data?.id || i.actionId))));
           const mergedSalarySettlements = replaceRemoteRecords(data.salarySettlements, state.salarySettlements || [], new Set(getOfflineQueue().filter(i => i.type === 'salary_settlement').map(i => String(i.data?.id || i.actionId))));
           const deletedIdnSettlementIds = new Set(getOfflineQueue().filter(i => i.type === 'idn_settlement_price_delete').map(i => String(i.data?.id || i.actionId)));
-          const mergedIdnSettlementPrices = mergeUnique(data.idnSettlementPrices, state.idnSettlementPrices || []).filter(p => !deletedIdnSettlementIds.has(String(p.id)));
 
           const updatedCurrentUser = state.currentUser
             ? (finalUsers.find((u: any) => u.id === state.currentUser?.id) || state.currentUser)
@@ -3850,7 +3785,6 @@ export const useStore = create<AppState>()(
             quotes: mergedQuotes,
             timeShifts: mergedTimeShifts,
             salarySettlements: mergedSalarySettlements,
-            idnSettlementPrices: mergedIdnSettlementPrices,
             receiptConfig: data.receiptConfig ? { ...state.receiptConfig, ...data.receiptConfig } : state.receiptConfig,
             storeConfig: data.storeConfig ? { ...state.storeConfig, ...data.storeConfig } : state.storeConfig,
             catalogConfig: data.catalogConfig ? { ...state.catalogConfig, ...data.catalogConfig } : state.catalogConfig,
@@ -3992,8 +3926,7 @@ export const useStore = create<AppState>()(
     transactions: state.transactions, returns: state.returns, warranties: state.warranties,
     cashSessions: state.cashSessions, transfers: state.transfers, suppliers: state.suppliers,
     supplierOrders: state.supplierOrders, inventoryAudits: state.inventoryAudits, salarySettlements: state.salarySettlements,
-    quotes: state.quotes, timeShifts: state.timeShifts, pendingOrders: state.pendingOrders,
-    idnSettlementPrices: state.idnSettlementPrices, receiptConfig: state.receiptConfig,
+    quotes: state.quotes, timeShifts: state.timeShifts, pendingOrders: state.pendingOrders, receiptConfig: state.receiptConfig,
     fiscalConfigs: state.fiscalConfigs, bankCards: state.bankCards
   })
 }
