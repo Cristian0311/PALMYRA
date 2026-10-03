@@ -1,0 +1,3 @@
+-- DEPRECATED: offline-first RPCs are now included in SUPABASE_MIGRATION.sql.
+-- Apply SUPABASE_MIGRATION.sql instead of this file.
+-- Kept only as a marker to prevent function drift.

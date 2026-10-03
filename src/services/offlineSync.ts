@@ -1,0 +1,1322 @@
+/**
+ * Offline synchronization engine.
+ *
+ * The durable queue itself lives in offlineQueue.ts so the application store can
+ * enqueue operations without importing the replay engine or Supabase adapters.
+ */
+import { getSupabase, checkSupabaseReachability } from '../lib/supabase';
+import { useStore } from '../store/useStore';
+import type { OfflineActionType, OfflineQueueItem } from './offlineQueue';
+import type { Transaction, CashRegisterSession, Customer, ReturnItem, Branch, Product, Category } from '../types';
+import {
+  getOfflineQueue,
+  waitForOfflineQueueReady,
+  getOfflineQueueCount,
+  isOfflineQueueItemRemoved,
+  clearOfflineQueueRemovalMark,
+  setOfflineQueueMemory,
+  persistOfflineQueueSnapshot
+} from './offlineQueue';
+import {
+  callOpenSessionRPCWithId, callProcessTransactionRPC, callVoidTransactionRPC, callCancelSessionRPC,
+  callCompleteReturnRPC, callTransferInventoryRPC, callTransferInventoryBulkRPC, callReceiveSupplierOrderRPC,
+  callStartInventoryAuditRPC, callSaveInventoryAuditCountRPC, callRequestInventoryAuditRecountRPC, callApproveInventoryAuditRPC,
+  callBankInternalTransferRPC, callDeleteBankInternalTransferRPC, callDeleteBankTransactionRPC, callDeleteBankCardRPC, callProcessBankTransactionRPC,
+  setBankCardBalanceToSupabase, pullBranchInventoryFromSupabase,
+  pushCashSessionToSupabase, deleteProductFromSupabase
+} from './supabaseSync';
+import { addSyncLog } from '../utils/syncLogger';
+
+async function reconcileBankCanonical(): Promise<void> {
+  try {
+    const { pullBankDataFromSupabase } = await import('./supabaseSync');
+    const remote = await pullBankDataFromSupabase();
+    if (remote.success) {
+      useStore.setState({
+        bankCards: remote.bankCards,
+        bankTransactions: remote.bankTransactions
+      });
+    }
+  } catch (e) {
+    console.warn('[bank] No se pudo reconciliar el estado bancario canónico:', e);
+  }
+}
+
+async function reconcileSupplierReceiveCanonical(supabase: any, orderId: string): Promise<void> {
+  try {
+    const { data: remoteOrder, error } = await supabase
+      .from('supplier_orders')
+      .select('*')
+      .eq('id', orderId)
+      .maybeSingle();
+    if (error) throw error;
+
+    if (remoteOrder) {
+      useStore.setState(state => ({
+        supplierOrders: (state.supplierOrders || []).map(order =>
+          order.id === orderId
+            ? { ...order, status: remoteOrder.status || order.status }
+            : order
+        )
+      }));
+    }
+
+    // El inventario local puede haber sido incrementado de forma optimista
+    // mientras estaba offline; refrescamos la sucursal para devolverlo al
+    // estado que realmente existe en Supabase.
+    const branchId = remoteOrder?.branch_id;
+    if (branchId) {
+      const inventoryRes = await pullBranchInventoryFromSupabase(branchId);
+      if (!inventoryRes.success) {
+        throw new Error(inventoryRes.message || 'No se pudo reconciliar el inventario de la recepción.');
+      }
+      const pendingRows = getOfflineQueue().filter(q => {
+        const d = q.data || {};
+        return (
+          (q.type === 'transfer' && (d.fromBranchId === branchId || d.toBranchId === branchId)) ||
+          (q.type === 'transfer_bulk' && (d.fromBranchId === branchId || d.toBranchId === branchId)) ||
+          (q.type === 'transaction' && d.branchId === branchId) ||
+          ((q.type === 'inventory_adjustment' || q.type === 'inventory_reconcile') && d.branchId === branchId)
+        );
+      });
+      const pendingKeys = new Set<string>();
+      for (const q of pendingRows) {
+        const d = q.data || {};
+        if (q.type === 'transaction') {
+          for (const line of Array.isArray(d.items) ? d.items : []) {
+            const productId = typeof line?.product === 'string' ? line.product : line?.product?.id;
+            if (productId) pendingKeys.add(`${productId}:${branchId}:${line?.variantLabel || line?.variant_label || ''}`);
+          }
+        } else if (q.type === 'transfer') {
+          for (const line of Array.isArray(d.variants) ? d.variants : []) {
+            if (d.productId) pendingKeys.add(`${d.productId}:${branchId}:${line?.variantLabel || line?.variant_label || ''}`);
+          }
+        } else if (q.type === 'transfer_bulk') {
+          for (const op of Array.isArray(d.items) ? d.items : []) {
+            for (const line of Array.isArray(op?.variants) ? op.variants : []) {
+              if (op?.productId) pendingKeys.add(`${op.productId}:${branchId}:${line?.variantLabel || line?.variant_label || ''}`);
+            }
+          }
+        } else if (d.productId) {
+          pendingKeys.add(`${d.productId}:${branchId}:${d.variantLabel || ''}`);
+        }
+      }
+      useStore.setState(state => {
+        const otherBranches = (state.inventory || []).filter(item => item.branchId !== branchId);
+        const byKey = new Map(inventoryRes.inventory.map(item => [
+          `${item.productId}:${item.branchId}:${item.variantLabel || ''}`, item
+        ]));
+        for (const localRow of state.inventory || []) {
+          const key = `${localRow.productId}:${localRow.branchId}:${localRow.variantLabel || ''}`;
+          if (pendingKeys.has(key)) byKey.set(key, localRow);
+        }
+        return { inventory: [...otherBranches, ...Array.from(byKey.values())] };
+      });
+    }
+  } catch (e) {
+    console.warn('[supplier_receive] No se pudo reconciliar la orden/stock canónico:', e);
+  }
+}
+
+async function refreshTransferBranchesCanonical(
+  supabase: any,
+  branchIds: string[]
+): Promise<void> {
+  const ids = Array.from(new Set(branchIds.filter(Boolean)));
+  if (!ids.length) return;
+  const { data, error } = await supabase
+    .from('inventory')
+    .select('*')
+    .in('branch_id', ids);
+  if (error) throw error;
+
+  const freshByKey = new Map<string, any>();
+  for (const row of data || []) {
+    freshByKey.set(
+      `${row.product_id}:${row.branch_id}:${row.variant_label || ''}`,
+      {
+        id: row.id,
+        productId: row.product_id,
+        branchId: row.branch_id,
+        variantLabel: row.variant_label || undefined,
+        quantity: Number(row.quantity) || 0,
+        minQuantity: Number(row.min_quantity) || 0
+      }
+    );
+  }
+
+  // No perder el espejo optimista de otras operaciones que siguen en
+  // la cola para estas mismas sucursales. El movimiento que acabamos de
+  // confirmar ya no estará en la cola; solo conservamos operaciones aún
+  // pendientes.
+  const pendingKeys = new Set<string>();
+  for (const queued of getOfflineQueue()) {
+    const d = queued.data || {};
+    if (queued.type === 'transaction') {
+      const branchId = d.branchId;
+      for (const saleItem of Array.isArray(d.items) ? d.items : []) {
+        const productId = typeof saleItem?.product === 'string' ? saleItem.product : saleItem?.product?.id;
+        if (!productId || !ids.includes(branchId)) continue;
+        pendingKeys.add(`${productId}:${branchId}:${saleItem?.variantLabel || saleItem?.variant_label || ''}`);
+      }
+    } else if (queued.type === 'transfer') {
+      const productId = d.productId;
+      for (const v of Array.isArray(d.variants) ? d.variants : []) {
+        const label = v?.variantLabel ?? v?.variant_label ?? '';
+        if (!productId) continue;
+        if (ids.includes(d.fromBranchId)) pendingKeys.add(`${productId}:${d.fromBranchId}:${label}`);
+        if (ids.includes(d.toBranchId)) pendingKeys.add(`${productId}:${d.toBranchId}:${label}`);
+      }
+    } else if (queued.type === 'transfer_bulk') {
+      for (const op of Array.isArray(d.items) ? d.items : []) {
+        for (const v of Array.isArray(op?.variants) ? op.variants : []) {
+          const label = v?.variantLabel ?? v?.variant_label ?? '';
+          if (!op?.productId) continue;
+          if (ids.includes(d.fromBranchId)) pendingKeys.add(`${op.productId}:${d.fromBranchId}:${label}`);
+          if (ids.includes(d.toBranchId)) pendingKeys.add(`${op.productId}:${d.toBranchId}:${label}`);
+        }
+      }
+    } else if (queued.type === 'supplier_receive') {
+      const order = (useStore.getState().supplierOrders || []).find(o => o.id === d.id);
+      if (order && ids.includes(order.branchId)) {
+        for (const line of Array.isArray(order.items) ? order.items : []) {
+          pendingKeys.add(`${line.productId}:${order.branchId}:${line.variantLabel || ''}`);
+        }
+      }
+    } else if (queued.type === 'inventory_adjustment' || queued.type === 'inventory_reconcile') {
+      if (ids.includes(d.branchId) && d.productId) {
+        pendingKeys.add(`${d.productId}:${d.branchId}:${d.variantLabel || ''}`);
+      }
+    }
+  }
+
+  useStore.setState(state => {
+    const existing = (state.inventory || []).filter(row => !ids.includes(row.branchId));
+    const freshByKeyWithPendingOverlay = new Map(freshByKey);
+    for (const localRow of state.inventory || []) {
+      const key = `${localRow.productId}:${localRow.branchId}:${localRow.variantLabel || ''}`;
+      if (pendingKeys.has(key)) {
+        freshByKeyWithPendingOverlay.set(key, localRow);
+      }
+    }
+    return {
+      inventory: [...existing, ...Array.from(freshByKeyWithPendingOverlay.values())]
+    };
+  });
+}
+
+let isProcessingQueue = false;
+
+class PermanentSyncError extends Error {
+  permanent = true;
+}
+
+async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<boolean> {
+  const { type, data } = item;
+  switch (type) {
+    case 'cash_session': {
+      const session = data as CashRegisterSession & { __operation?: 'open' | 'close' | 'cancel' | 'snapshot'; settlement?: any; closedAt?: string };
+      if (session.__operation === 'close') {
+        const settlement = session.settlement;
+        if (!settlement) throw new Error('Cierre offline sin liquidación asociada');
+
+        // Las ventas offline ya fueron procesadas (o marcadas como conflicto)
+        // antes del cierre por el grafo de dependencias. Recalculamos las
+        // comisiones desde las ventas que realmente existen en Supabase para
+        // que una venta rechazada no termine dentro de la liquidación salarial.
+        const { data: persistedSales, error: salesError } = await supabase
+          .from('transactions')
+          .select('id,status,deleted_at,items')
+          .eq('session_id', session.id);
+        if (salesError) throw salesError;
+
+        let commissions = 0;
+        for (const sale of persistedSales || []) {
+          if (sale.status !== 'completed' || sale.deleted_at) continue;
+          const items = Array.isArray(sale.items) ? sale.items : [];
+          for (const item of items) {
+            const product = item?.product;
+            const commissionValue = Number(
+              product?.commissionValue ??
+              product?.commission_value ??
+              item?.commissionValue ??
+              item?.commission_value ??
+              0
+            ) || 0;
+            commissions += commissionValue * (Number(item?.quantity) || 0);
+          }
+        }
+
+        const discrepancyDeduction = Number(settlement.discrepancyDeduction) || 0;
+        const recalculatedSettlement = {
+          ...settlement,
+          commissions,
+          total: (Number(settlement.baseSalary) || 0) + commissions - discrepancyDeduction
+        };
+
+        const res = await (await import('./supabaseSync')).callCloseSessionRPC(
+          session.id,
+          session.closingBalances || [],
+          session.closedAt || new Date().toISOString(),
+          session.notes || '',
+          recalculatedSettlement
+        );
+        if (!res.success) throw new Error(res.error || 'No se pudo cerrar el turno');
+        return true;
+      }
+      if (session.__operation === 'cancel') {
+        const res = await callCancelSessionRPC(session.id, session.userId || 'system', session.deleteReason || 'Cancelación de turno');
+        if (!res.success) throw new Error(res.error || 'No se pudo cancelar el turno');
+        return true;
+      }
+      if (session.__operation === 'open' || String(item.actionId).startsWith('cash-open:')) {
+        const res = await callOpenSessionRPCWithId(session);
+        if (res.success) {
+          // Reconcile the optimistic local turn number with the authoritative
+          // number assigned by Supabase. The server owns the global sequence.
+          if (res.data?.turn_number != null) {
+            useStore.setState(state => ({
+              cashSessions: (state.cashSessions || []).map(s =>
+                s.id === session.id ? { ...s, turnNumber: Number(res.data.turn_number) } : s
+              ),
+              lastTurnNumber: Math.max(state.lastTurnNumber || 0, Number(res.data.turn_number) || 0)
+            }));
+          }
+          return true;
+        }
+        throw new Error(res.error || 'No se pudo abrir el turno en Supabase');
+      }
+      // Un snapshot nunca debe reabrir ni cerrar un turno por accidente.
+      // Apertura/cierre/cancelación tienen sus propias operaciones. Aquí solo
+      // reconciliamos metadatos de una sesión ya existente.
+      const { data: remoteSession, error: remoteReadError } = await supabase
+        .from('cash_sessions')
+        .select('id,status,closed_at,deleted_at,deleted_by,delete_reason,branch_id,user_id')
+        .eq('id', session.id)
+        .maybeSingle();
+      if (remoteReadError) throw remoteReadError;
+
+      if (remoteSession && remoteSession.status !== 'open' && session.status === 'open') {
+        // El servidor ya tiene la autoridad final (cerrado/cancelado). El
+        // snapshot local quedó obsoleto; se descarta sin reabrir el turno.
+        return true;
+      }
+
+      // Usamos el mismo adaptador protegido que el flujo online: mezcla
+      // movimientos/colaboradores y evita reabrir un turno cerrado.
+      const synced = await pushCashSessionToSupabase(session);
+      if (!synced) throw new Error('El snapshot del turno no fue confirmado en Supabase.');
+      return true;
+    }
+    case 'audit_start': {
+      const d = data;
+      const res = await (await import('./supabaseSync')).callStartInventoryAuditRPC(
+        d.id, d.branchId, d.userId, d.mode || 'cycle_count', d.blindCount === true, d.notes || ''
+      );
+      if (!res.success) throw new Error(res.error || 'No se pudo iniciar la auditoría');
+      if (res.data?.already_exists && res.data?.audit_id && res.data.audit_id !== d.id) {
+        useStore.setState(state => ({
+          inventoryAudits: state.inventoryAudits.filter(a => a.id !== d.id)
+        }));
+        useStore.getState().addNotification('La auditoría offline no pudo abrirse porque ya existe otra auditoría activa en esta sucursal.', 'warning');
+        throw new PermanentSyncError('Ya existe otra auditoría activa para esta sucursal.');
+      }
+      return true;
+    }
+    case 'audit_recount': {
+      const d = data;
+      const res = await (await import('./supabaseSync')).callRequestInventoryAuditRecountRPC(d.id, d.userId, d.notes || '');
+      if (!res.success) throw new Error(res.error || 'No se pudo solicitar el recuento');
+      return true;
+    }
+    case 'audit_approve': {
+      const d = data;
+      const res = await (await import('./supabaseSync')).callApproveInventoryAuditRPC(d.id, d.userId, d.notes || '');
+      if (!res.success) throw new Error(res.error || 'No se pudo aprobar la auditoría');
+      return true;
+    }
+    case 'branch_delete': {
+      const id = String(data?.id || '');
+      if (!id) throw new PermanentSyncError('Eliminación de sucursal sin ID');
+      const { count: invCount, error: invError } = await supabase.from('inventory').select('*', { count: 'exact', head: true }).eq('branch_id', id);
+      const { count: txCount, error: txError } = await supabase.from('transactions').select('*', { count: 'exact', head: true }).eq('branch_id', id);
+      const { count: csCount, error: csError } = await supabase.from('cash_sessions').select('*', { count: 'exact', head: true }).eq('branch_id', id);
+      if (invError || txError || csError) throw invError || txError || csError;
+      if ((invCount || 0) > 0 || (txCount || 0) > 0 || (csCount || 0) > 0) {
+        const { error } = await supabase.from('branches').update({ is_active: false }).eq('id', id);
+        if (error) throw error;
+      } else {
+        const { error: usersError } = await supabase.from('users').update({ branch_id: null, assigned_branch_id: null }).eq('branch_id', id);
+        if (usersError) throw usersError;
+        const { error } = await supabase.from('branches').delete().eq('id', id);
+        if (error) throw error;
+      }
+      return true;
+    }
+    case 'category_delete': {
+      const id = String(data?.id || '');
+      if (!id) throw new PermanentSyncError('Eliminación de categoría sin ID');
+      const { error } = await supabase.from('categories').delete().eq('id', id);
+      if (error) {
+        if (error.code === '23503') throw new PermanentSyncError(error.message || 'La categoría está siendo utilizada por otro registro.');
+        throw error;
+      }
+      return true;
+    }
+    case 'idn_settlement_price_delete': {
+      const id = String(data?.id || '');
+      if (!id) throw new PermanentSyncError('Eliminación de precio IDN sin ID');
+      const { error } = await supabase.from('idn_settlement_prices').delete().eq('id', id);
+      if (error) throw error;
+      return true;
+    }
+    case 'supplier_delete': {
+      const id = String(data?.id || '');
+      if (!id) throw new PermanentSyncError('Eliminación de proveedor sin ID');
+      const { error } = await supabase.from('suppliers').delete().eq('id', id);
+      if (error) {
+        if (error.code === '23503') throw new PermanentSyncError(error.message || 'El proveedor tiene datos relacionados y no puede eliminarse.');
+        throw error;
+      }
+      return true;
+    }
+    case 'salary_settlement': {
+      const settlement = data;
+      const { error } = await supabase.from('salary_settlements').upsert({
+        id: settlement.id, user_id: settlement.userId || null, user_name: settlement.userName || '',
+        session_id: settlement.sessionId || null, base_salary: Number(settlement.baseSalary) || 0,
+        sales_goal: Number(settlement.salesGoal) || 0, commissions: Number(settlement.commissions) || 0,
+        total: Number(settlement.total) || 0, date: settlement.date, status: settlement.status || 'pending'
+      });
+      if (error) throw error;
+
+      const { data: persisted, error: verifyError } = await supabase
+        .from('salary_settlements')
+        .select('id,user_id,session_id,total,status')
+        .eq('id', settlement.id)
+        .maybeSingle();
+      if (verifyError) throw verifyError;
+      if (!persisted) throw new Error('Liquidación salarial no confirmada en Supabase después del replay.');
+      return true;
+    }
+    case 'customer': {
+      const customer = data as Customer;
+      const { error } = await supabase.from('customers').upsert({ id: customer.id, name: customer.name, phone: customer.phone || null, email: customer.email || null, tax_id: customer.taxId || null });
+      if (error) throw error; return true;
+    }
+    case 'customer_delete': {
+      const { error } = await supabase.from('customers').delete().eq('id', data.id);
+      if (error) throw error; return true;
+    }
+    case 'branch': {
+      const b = data as Branch;
+      const { error } = await supabase.from('branches').upsert({ id: b.id, name: b.name, address: b.address || null, phone: b.phone || null, is_active: b.isActive !== false, is_main: b.isMain === true });
+      if (error) throw error; return true;
+    }
+    case 'category': {
+      const c = data as Category;
+      const { error } = await supabase.from('categories').upsert({ id: c.id, name: c.name, department: c.department || 'General', description: c.description || null, color: c.color || null, image: c.image || null });
+      if (error) throw error; return true;
+    }
+    case 'product_delete': {
+      const productId = String(data?.id || '');
+      if (!productId) throw new PermanentSyncError('Eliminación de producto sin ID');
+      const ok = await deleteProductFromSupabase(productId);
+      if (!ok) throw new Error('No se pudo confirmar la eliminación del producto en Supabase');
+      return true;
+    }
+    case 'product': {
+      const p = data as Product;
+      const { error } = await supabase.from('products').upsert({ id: p.id, name: p.name, sku: p.sku || null, barcode: p.barcode || null, cost_price: p.costPrice || 0, price: p.price || 0, margin: p.margin || 0, category_id: p.categoryId || null, color: p.color || null, commission_value: p.commissionValue || 0, unit: p.unit || 'unidad', status: p.status || 'active', min_stock_alert: p.minStockAlert || 5, has_serial: p.hasSerial || false, warranty_days: p.warrantyDays || 0, is_kit: p.isKit || false, kit_items: p.kitItems || [] });
+      if (error) {
+        const msg = String(error.message || '');
+        if (String(error.code || '') === 'P0001' || msg.includes('PRODUCT_DELETED')) {
+          throw new PermanentSyncError('El producto ya fue eliminado permanentemente; se descarta la edición pendiente.');
+        }
+        throw error;
+      }
+      return true;
+    }
+    case 'user': {
+      const u = data;
+      const email = u.email && String(u.email).trim() ? u.email : `${String(u.name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '')}_${String(u.id).slice(0, 6)}@system.local`;
+      const { error } = await supabase.from('users').upsert({ id:u.id, name:u.name, email, password:u.password || null, role:u.role || 'employee', base_salary:u.baseSalary || 0, sales_goal:u.salesGoal || 0, branch_id:u.branchId || null, allowed_branches:u.allowedBranches || [], permissions:u.permissions || [], is_active:u.isActive !== false, is_independent:u.isIndependent === true, assigned_branch_id:u.assignedBranchId || u.branchId || null });
+      if (error) throw error; return true;
+    }
+    case 'currency': { const c=data; const {error}=await supabase.from('currencies').upsert({code:c.code,name:c.name,symbol:c.symbol,rate_to_base:c.rateToBase,is_base:c.isBase},{onConflict:'code'}); if(error) throw error; return true; }
+    case 'idn_settlement_price': { const d=data; const {error}=await supabase.from('idn_settlement_prices').upsert({id:d.id,user_id:d.userId,product_id:d.productId,settlement_price:d.settlementPrice}); if(error) throw error; return true; }
+    case 'warranty': { const d=data; const {error}=await supabase.from('warranties').upsert({id:d.id,product_id:d.productId,product_name:d.productName,transaction_id:d.transactionId,customer_id:d.customerId,customer_name:d.customerName,purchase_date:d.purchaseDate,expiry_date:d.expiryDate,serial_number:d.serialNumber,status:d.status}); if(error) throw error; return true; }
+    case 'time_shift': { const d=data; const {error}=await supabase.from('time_shifts').upsert({id:d.id,user_id:d.userId,clock_in:d.clockIn,clock_out:d.clockOut,notes:d.notes}); if(error) throw error; return true; }
+    case 'quote': { const d=data; const {error}=await supabase.from('quotes').upsert({id:d.id,branch_id:d.branchId,user_id:d.userId,customer_id:d.customerId,date:d.date,subtotal:d.subtotal,tax:d.tax,total:d.total,items:d.items||[],status:d.status,notes:d.notes}); if(error) throw error; return true; }
+    case 'bank_card': {
+      const d = data;
+      if (d.__metadata_only) {
+        const payload = {
+          name: d.name || d.bankName || 'Tarjeta Bancaria',
+          bank: d.bank || d.bankName || 'Banco',
+          bank_name: d.bankName || d.bank || 'Banco',
+          card_holder: d.cardHolder || 'Titular',
+          account_number: d.accountNumber || d.lastFourDigits || d.lastFour || '',
+          phone: d.phone || '',
+          last_four_digits: d.lastFourDigits || d.lastFour || (d.accountNumber ? String(d.accountNumber).slice(-4) : '0000'),
+          currency: d.currency || 'CUP',
+          color: d.color || 'from-indigo-600 to-purple-800',
+          is_active: d.isActive !== false
+        };
+        const { data: updatedRows, error } = await supabase
+          .from('bank_cards')
+          .update(payload)
+          .eq('id', d.id)
+          .select('id');
+        if (error) throw error;
+        if (!updatedRows?.length) throw new Error('La cuenta bancaria no existe para actualizar sus datos.');
+        return true;
+      }
+
+      const { error } = await supabase.from('bank_cards').upsert({
+        id: d.id,
+        name: d.name || d.bankName || 'Tarjeta Bancaria',
+        bank: d.bank || d.bankName || 'Banco',
+        bank_name: d.bankName || d.bank || 'Banco',
+        card_holder: d.cardHolder || 'Titular',
+        account_number: d.accountNumber || d.lastFourDigits || d.lastFour || '',
+        phone: d.phone || '',
+        last_four_digits: d.lastFourDigits || d.lastFour || (d.accountNumber ? String(d.accountNumber).slice(-4) : '0000'),
+        balance: Number(d.balance) || 0,
+        currency: d.currency || 'CUP',
+        color: d.color || 'from-indigo-600 to-purple-800',
+        is_active: d.isActive !== false
+      });
+      if (error) throw error;
+      return true;
+    }
+    case 'bank_card_balance': {
+      const d = data;
+      const synced = await setBankCardBalanceToSupabase(
+        d.id,
+        Number(d.expectedBalance) || 0,
+        Math.max(0, Number(d.newBalance) || 0)
+      );
+      if (!synced) {
+        await reconcileBankCanonical();
+        throw new PermanentSyncError('Conflicto de saldo bancario: otro movimiento cambió el saldo antes del ajuste.');
+      }
+      return true;
+    }
+    case 'bank_transaction': {
+      const d = data;
+      if (d.__operation === 'delete') {
+        const res = await callDeleteBankTransactionRPC(d.id);
+        if (!res.success) {
+          const code = String(res.errorCode || '');
+          if (['P0001','23503','23505','42501','22003','22P02'].includes(code)) {
+            await reconcileBankCanonical();
+            throw new PermanentSyncError(res.error || 'No se pudo eliminar el movimiento bancario');
+          }
+          throw new Error(res.error || 'No se pudo eliminar el movimiento bancario');
+        }
+        return true;
+      }
+      // Un ingreso generado por una venta nunca se procesa solo. Aunque su
+      // dependencia haya quedado marcada como conflict, verificamos de nuevo
+      // que la venta exista y siga válida en Supabase antes del banco.
+      if (d.transactionId) {
+        const { data: sale, error: saleError } = await supabase
+          .from('transactions')
+          .select('id,status,deleted_at')
+          .eq('id', d.transactionId)
+          .maybeSingle();
+        if (saleError) throw saleError;
+        if (!sale || sale.deleted_at || sale.status !== 'completed') {
+          throw new Error('La venta asociada todavía no está confirmada en Supabase; el movimiento bancario permanece pendiente.');
+        }
+      }
+      const res = await callProcessBankTransactionRPC(d);
+      if (!res.success) {
+        const code = String(res.errorCode || '');
+        if (['P0001','23503','23505','42501','22003','22P02'].includes(code)) {
+          await reconcileBankCanonical();
+          throw new PermanentSyncError(res.error || 'No se pudo sincronizar el movimiento bancario');
+        }
+        throw new Error(res.error || 'No se pudo sincronizar el movimiento bancario');
+      }
+      return true;
+    }
+    case 'supplier': { const d=data; const {error}=await supabase.from('suppliers').upsert({id:d.id,name:d.name,phone:d.phone||'',address:d.address||'',email:d.email||'',rating:d.rating||5,type_of_merchandise:d.typeOfMerchandise||''}); if(error) throw error; return true; }
+    case 'supplier_order': { const d=data; const {error}=await supabase.from('supplier_orders').upsert({id:d.id,supplier_id:d.supplierId,date:d.date,expected_delivery_date:d.expectedDeliveryDate,items:d.items||[],total:d.total,status:d.status,branch_id:d.branchId,transport_details:d.transportDetails,transport_cost:d.transportCost}); if(error) throw error; return true; }
+    case 'inventory_audit': { const d=data; const {error}=await supabase.from('inventory_audits').upsert({id:d.id,date:d.date,branch_id:d.branchId,user_id:d.userId,status:d.status,items:d.items||[],notes:d.notes}); if(error) throw error; return true; }
+    case 'transaction': {
+      const transaction = data as Transaction;
+      // Una liquidación IDN con productos es una venta física y usa la misma RPC
+      // atómica/idempotente que el POS normal para descontar stock.
+      // Una liquidación sin productos sigue siendo solo administrativa.
+      if (transaction.notes === 'LIQUIDACION_IDN' && (transaction.items || []).length === 0) {
+        const { error } = await supabase.from('transactions').upsert({
+          id: transaction.id, date: transaction.date, total: transaction.total,
+          tax: transaction.tax || 0, discount: transaction.discount || 0,
+          branch_id: transaction.branchId, customer_id: transaction.customerId || null,
+          user_id: transaction.userId || null, status: transaction.status || 'completed',
+          notes: transaction.notes || '', payment_method: transaction.paymentMethod || 'cash',
+          session_id: transaction.sessionId || null, change_given: transaction.changeGiven || 0,
+          items: transaction.items || [], payments: transaction.payments || [],
+          change_payments: transaction.changePayments || [], seller_employee_ids: transaction.sellerEmployeeIds || [],
+          ncf: transaction.ncf || null, ncf_type: transaction.ncfType || null,
+          deleted_at: transaction.deletedAt || null, deleted_by: transaction.deletedBy || null,
+          delete_reason: transaction.deleteReason || null
+        });
+        if (error) throw error;
+        const { data: persistedIdn, error: verifyIdnError } = await supabase
+          .from('transactions')
+          .select('id,status,total,ncf,ncf_type')
+          .eq('id', transaction.id)
+          .maybeSingle();
+        if (verifyIdnError) throw verifyIdnError;
+        if (!persistedIdn || persistedIdn.id !== transaction.id || persistedIdn.status === 'refunded' || persistedIdn.status === 'cancelled') {
+          throw new Error('Supabase no confirmó la liquidación IDN como completada');
+        }
+        if ((transaction.ncf || null) !== (persistedIdn.ncf || null) || (transaction.ncfType || null) !== (persistedIdn.ncf_type || null)) {
+          throw new PermanentSyncError('El NCF de la liquidación IDN no coincide con el registro fiscal de Supabase');
+        }
+        useStore.setState(state => {
+          const exists = (state.transactions || []).some(t => t.id === transaction.id);
+          return {
+            transactions: exists
+              ? (state.transactions || []).map(t => t.id === transaction.id ? { ...t, ...transaction, offlinePending: false } : t)
+              : [{ ...transaction, offlinePending: false }, ...(state.transactions || [])]
+          };
+        });
+        return true;
+      }
+      const res = await callProcessTransactionRPC(transaction);
+      if (!res.success) {
+        // Solo códigos de negocio explícitamente irreversibles se consideran
+        // conflictos permanentes. Un timeout, 5xx, PostgREST o pérdida de
+        // conexión debe volver a intentarse aunque incluya metadata de error.
+        const permanentCodes = new Set(['P0001','23503','23505','22P02','22003','22007','IDEMPOTENCY_CONFLICT']);
+        if (res.errorCode && permanentCodes.has(String(res.errorCode))) {
+          // La venta existía localmente por modo offline, pero Supabase la rechazó
+          // definitivamente. No debe seguir apareciendo como completada ni dejar
+          // garantías asociadas que puedan sincronizarse solas.
+          useStore.setState(state => ({
+            transactions: (state.transactions || []).filter(t => t.id !== transaction.id),
+            warranties: (state.warranties || []).filter(w => w.transactionId !== transaction.id)
+          }));
+
+          // Cualquier garantía dependiente queda invalidada junto con la venta.
+          for (const queued of getOfflineQueue()) {
+            if (queued.type === 'warranty' && queued.data?.transactionId === transaction.id) {
+              removeFromOfflineQueue(queued.id);
+            }
+          }
+
+          // Recuperar el inventario real de la sucursal elimina el descuento
+          // optimista que se aplicó mientras el dispositivo estaba offline.
+          try {
+            const branchId = transaction.branchId;
+            if (branchId) {
+              const inventoryRes = await pullBranchInventoryFromSupabase(branchId);
+              if (inventoryRes.success) {
+                useStore.setState(state => ({
+                  inventory: [
+                    ...(state.inventory || []).filter(item => item.branchId !== branchId),
+                    ...inventoryRes.inventory
+                  ]
+                }));
+              }
+            }
+            await useStore.getState().refreshBranchOperationalData();
+          } catch (refreshError) {
+            console.warn('[transaction] No se pudo reconciliar el estado local tras rechazo definitivo:', refreshError);
+          }
+
+          useStore.getState().addNotification(
+            'Una venta realizada sin conexión fue rechazada por el servidor y no se confirmó.',
+            'error',
+            res.error || 'Revisa inventario, datos del producto o las reglas de la venta.'
+          );
+          throw new PermanentSyncError(res.error || 'La venta fue rechazada por Supabase');
+        }
+        throw new Error(res.error || 'No se pudo sincronizar la venta');
+      }
+
+      // No damos la operación por completada solo porque el HTTP/RPC respondió.
+      // Confirmamos que la fila existe realmente en Supabase antes de retirar la
+      // operación de IndexedDB. Así una respuesta incompleta o una caída durante
+      // la confirmación nunca puede dejar una venta perdida y una cola vacía.
+      const { data: persisted, error: verifyError } = await supabase
+        .from('transactions')
+        .select('id,status,total,branch_id')
+        .eq('id', transaction.id)
+        .maybeSingle();
+      if (verifyError) throw verifyError;
+      if (!persisted || persisted.id !== transaction.id || persisted.status === 'refunded' || persisted.status === 'cancelled') {
+        throw new Error('Supabase no confirmó la venta como completada después de procesarla');
+      }
+
+      // Al reintentar tras una caída, la RPC puede haber confirmado la venta
+      // antes de que la tablet muriera. El replay debe restaurar el inventario
+      // local desde el servidor y no volver a confiar en el snapshot offline.
+      const branchId = persisted.branch_id || transaction.branchId;
+      if (branchId) {
+        const inventoryRes = await pullBranchInventoryFromSupabase(branchId);
+        if (!inventoryRes.success) {
+          throw new Error(inventoryRes.message || 'No se pudo reconciliar el inventario de la venta');
+        }
+        useStore.setState(state => ({
+          inventory: [
+            ...(state.inventory || []).filter(item => item.branchId !== branchId),
+            ...inventoryRes.inventory
+          ]
+        }));
+      }
+
+      // La venta ya está confirmada en Supabase: quitar la marca local pendiente
+      // antes de retirar su operación del outbox.
+      useStore.setState(state => {
+        const exists = (state.transactions || []).some(t => t.id === transaction.id);
+        return {
+          transactions: exists
+            ? (state.transactions || []).map(t => t.id === transaction.id ? { ...t, ...transaction, offlinePending: false } : t)
+            : [{ ...transaction, offlinePending: false }, ...(state.transactions || [])]
+        };
+      });
+      return true;
+    }
+    case 'void_transaction': {
+      const res = await callVoidTransactionRPC(data.id, data.userId, data.reason || 'Anulación de venta');
+      if (!res.success) {
+        const code = String(res.errorCode || '');
+        if (['P0001','23503','23505','42501','22003','22P02','IDEMPOTENCY_CONFLICT'].includes(code)) {
+          throw new PermanentSyncError(res.error || 'La anulación de la venta fue rechazada permanentemente.');
+        }
+        throw new Error(res.error || 'No se pudo anular la venta');
+      }
+
+      const { data: persistedVoid, error: voidReadError } = await supabase
+        .from('transactions')
+        .select('id,status,branch_id')
+        .eq('id', data.id)
+        .maybeSingle();
+      if (voidReadError) throw voidReadError;
+      if (!persistedVoid || persistedVoid.status !== 'refunded') {
+        throw new Error('Supabase no confirmó la anulación de la venta');
+      }
+      if (persistedVoid.branch_id) {
+        const inventoryRes = await pullBranchInventoryFromSupabase(persistedVoid.branch_id);
+        if (!inventoryRes.success) throw new Error(inventoryRes.message || 'No se pudo reconciliar el inventario de la anulación');
+        useStore.setState(state => ({
+          inventory: [
+            ...(state.inventory || []).filter(item => item.branchId !== persistedVoid.branch_id),
+            ...inventoryRes.inventory
+          ]
+        }));
+      }
+      await reconcileBankCanonical();
+      return true;
+    }
+    case 'return_complete': {
+      const res = await callCompleteReturnRPC(data.id, data.userId);
+      if (!res.success) {
+        const code = String(res.errorCode || '');
+        if (['P0001','23503','23505','42501','22003','22P02','IDEMPOTENCY_CONFLICT'].includes(code)) {
+          throw new PermanentSyncError(res.error || 'La devolución fue rechazada permanentemente.');
+        }
+        throw new Error(res.error || 'No se pudo completar la devolución');
+      }
+
+      const { data: persistedReturn, error: returnReadError } = await supabase
+        .from('returns')
+        .select('id,status,branch_id')
+        .eq('id', data.id)
+        .maybeSingle();
+      if (returnReadError) throw returnReadError;
+      if (!persistedReturn || persistedReturn.status !== 'completed') {
+        throw new Error('Supabase no confirmó la devolución como completada');
+      }
+      if (persistedReturn.branch_id) {
+        const inventoryRes = await pullBranchInventoryFromSupabase(persistedReturn.branch_id);
+        if (!inventoryRes.success) throw new Error(inventoryRes.message || 'No se pudo reconciliar el inventario de la devolución');
+        useStore.setState(state => ({
+          inventory: [
+            ...(state.inventory || []).filter(item => item.branchId !== persistedReturn.branch_id),
+            ...inventoryRes.inventory
+          ]
+        }));
+      }
+      return true;
+    }
+    case 'transfer_bulk': {
+      const d = data || {};
+      const res = await callTransferInventoryBulkRPC({
+        batchId: d.batchId,
+        fromBranchId: d.fromBranchId,
+        toBranchId: d.toBranchId,
+        items: Array.isArray(d.items) ? d.items : [],
+        userId: d.userId
+      });
+      if (!res.success) {
+        const code = String(res.errorCode || '');
+        if (['P0001','23503','23505','42501','22003','22P02','IDEMPOTENCY_CONFLICT'].includes(code)) {
+          try {
+            await refreshTransferBranchesCanonical(supabase, [d.fromBranchId, d.toBranchId]);
+          } catch (refreshError) {
+            console.warn('[transfer_bulk] No se pudo refrescar origen/destino tras conflicto permanente:', refreshError);
+          }
+          throw new PermanentSyncError(res.error || 'No se pudo sincronizar el traslado múltiple');
+        }
+        throw new Error(res.error || 'No se pudo sincronizar el traslado múltiple');
+      }
+      await refreshTransferBranchesCanonical(supabase, [d.fromBranchId, d.toBranchId]);
+      useStore.setState(state => ({
+        transfers: (state.transfers || []).map(t => {
+          const op = d.items?.find((x:any) => x.operationId === (t.operationId || t.id));
+          return op ? { ...t, status: 'completed' as const, batchId: d.batchId } : t;
+        })
+      }));
+      return true;
+    }
+    case 'transfer': {
+      const res = await callTransferInventoryRPC(data);
+      if (!res.success) {
+        // Un traslado que falla por reglas de negocio/stock es un conflicto
+        // permanente para esa operación concreta. Antes de marcarlo como
+        // conflicto, refrescamos origen y destino para quitar el stock
+        // optimista local y mostrar el estado canónico.
+        const code = String(res.errorCode || '');
+        if (['P0001', '23503', '23505', '22003', '22P02'].includes(code)) {
+          try {
+            await refreshTransferBranchesCanonical(supabase, [data.fromBranchId, data.toBranchId]);
+          } catch (refreshError) {
+            console.warn('[transfer] No se pudo refrescar origen/destino tras conflicto:', refreshError);
+          }
+          useStore.setState(state => ({
+            transfers: (state.transfers || []).map(t =>
+              (t.id === data.operationId || t.operationId === data.operationId)
+                ? { ...t, status: 'cancelled' as const }
+                : t
+            )
+          }));
+          throw new PermanentSyncError(res.error || 'Transferencia rechazada por Supabase');
+        }
+        throw new Error(res.error || 'No se pudo sincronizar la transferencia');
+      }
+
+      // La RPC debe confirmarse tanto a nivel de respuesta como de
+      // persistencia de la operación. Así nunca retiramos de IndexedDB una
+      // transferencia que haya quedado solo parcialmente confirmada.
+      const { data: persistedTransfer, error: verifyError } = await supabase
+        .from('inventory_transfers')
+        .select('id,operation_id,status,product_id,from_branch_id,to_branch_id,quantity,variants')
+        .eq('operation_id', data.operationId)
+        .maybeSingle();
+      if (verifyError) throw verifyError;
+      if (!persistedTransfer) {
+        throw new Error('Supabase no confirmó la transferencia en inventory_transfers.');
+      }
+
+      await refreshTransferBranchesCanonical(supabase, [data.fromBranchId, data.toBranchId]);
+
+      useStore.setState(state => ({
+        transfers: (state.transfers || []).map(t =>
+          (t.id === data.operationId || t.operationId === data.operationId)
+            ? { ...t, status: 'completed' as const }
+            : t
+        )
+      }));
+      return true;
+    }
+    case 'bank_internal_transfer': {
+      const res = await callBankInternalTransferRPC(data);
+      if (!res.success) {
+        const code = String(res.errorCode || '');
+        if (['P0001','23503','23505','42501','22003','22P02'].includes(code)) {
+          await reconcileBankCanonical();
+          throw new PermanentSyncError(res.error || 'No se pudo sincronizar la transferencia bancaria');
+        }
+        throw new Error(res.error || 'No se pudo sincronizar la transferencia bancaria');
+      }
+      return true;
+    }
+    case 'bank_internal_transfer_delete': {
+      const res = await callDeleteBankInternalTransferRPC(data.operationId);
+      if (!res.success) {
+        const code = String(res.errorCode || '');
+        if (['P0001','23503','23505','42501','22003','22P02'].includes(code)) {
+          await reconcileBankCanonical();
+          throw new PermanentSyncError(res.error || 'No se pudo revertir la transferencia bancaria');
+        }
+        throw new Error(res.error || 'No se pudo revertir la transferencia bancaria');
+      }
+      return true;
+    }
+    case 'bank_transaction_delete': {
+      const res = await callDeleteBankTransactionRPC(data.id);
+      if (!res.success) {
+        const code = String(res.errorCode || '');
+        if (['P0001','23503','23505','42501','22003','22P02'].includes(code)) {
+          await reconcileBankCanonical();
+          throw new PermanentSyncError(res.error || 'No se pudo eliminar el movimiento bancario');
+        }
+        throw new Error(res.error || 'No se pudo eliminar el movimiento bancario');
+      }
+      return true;
+    }
+    case 'bank_card_delete': {
+      const res = await callDeleteBankCardRPC(data.id);
+      if (!res.success) {
+        const code = String(res.errorCode || '');
+        if (['P0001','23503','23505','42501','22003','22P02'].includes(code)) {
+          await reconcileBankCanonical();
+          throw new PermanentSyncError(res.error || 'No se pudo eliminar la cuenta bancaria');
+        }
+        throw new Error(res.error || 'No se pudo eliminar la cuenta bancaria');
+      }
+      return true;
+    }
+    case 'supplier_receive': {
+      if (!data.userId) throw new PermanentSyncError('La recepción de mercancía no tiene un trabajador válido asociado.');
+      const res = await callReceiveSupplierOrderRPC(data.id, data.userId);
+      if (!res.success) {
+        const code = String(res.errorCode || '');
+        if (['P0001','23503','23505','42501','22003','22P02','IDEMPOTENCY_CONFLICT'].includes(code)) {
+          await reconcileSupplierReceiveCanonical(supabase, data.id);
+          throw new PermanentSyncError(res.error || 'No se pudo recibir la orden');
+        }
+        throw new Error(res.error || 'No se pudo recibir la orden');
+      }
+      await reconcileSupplierReceiveCanonical(supabase, data.id);
+      return true;
+    }
+    case 'audit_complete': { const res = await callSaveInventoryAuditCountRPC(data.id, data.userId, data.items || [], data.notes); if (!res.success) throw new Error(res.error || 'No se pudo guardar el conteo'); return true; }
+    case 'inventory': {
+      // Compatibilidad con colas antiguas que guardaban un stock absoluto.
+      // Nunca sobrescribimos silenciosamente un cambio remoto: solo aceptamos
+      // la operación si el servidor todavía coincide con el valor esperado.
+      const { data: current, error: readError } = await supabase.from('inventory').select('quantity').eq('product_id', data.productId).eq('branch_id', data.branchId).eq('variant_label', data.variantLabel || '').maybeSingle();
+      if (readError) throw readError;
+      if (current && Number(current.quantity) !== Number(data.quantity)) {
+        try {
+          const refreshed = await pullBranchInventoryFromSupabase(data.branchId);
+          if (refreshed.success) {
+            useStore.setState(state => ({
+              inventory: [
+                ...(state.inventory || []).filter(item => item.branchId !== data.branchId),
+                ...refreshed.inventory
+              ]
+            }));
+          }
+        } catch (refreshError) {
+          console.warn('[inventory legado] No se pudo refrescar el stock canónico tras conflicto:', refreshError);
+        }
+        throw new PermanentSyncError('Conflicto de inventario legado: el stock remoto cambió antes de sincronizar.');
+      }
+      return true;
+    }
+    case 'inventory_adjustment': {
+      const { data: result, error } = await supabase.rpc('apply_inventory_adjustment_v2', {
+        p_operation_id: item.actionId, p_product_id: data.productId, p_branch_id: data.branchId,
+        p_variant_label: data.variantLabel || '', p_delta: Number(data.delta) || 0,
+        p_min_quantity: Number(data.minQuantity) || 0, p_user_id: data.userId || null,
+        p_movement_type: data.movementType || 'ADJUSTMENT'
+      });
+      if (error) throw error;
+      if (result?.conflict) throw new PermanentSyncError(result.message || 'Conflicto de inventario: el stock cambió mientras la operación estaba pendiente.');
+      return true;
+    }
+    case 'inventory_reconcile': {
+      const { data: result, error } = await supabase.rpc('reconcile_inventory_v2', {
+        p_operation_id: item.actionId, p_product_id: data.productId, p_branch_id: data.branchId,
+        p_variant_label: data.variantLabel || '', p_expected_quantity: Number(data.expectedQuantity),
+        p_new_quantity: Math.max(0, Number(data.quantity) || 0), p_min_quantity: Number(data.minQuantity) || 0,
+        p_user_id: data.userId || null
+      });
+      if (error) throw error;
+      if (result?.conflict) throw new PermanentSyncError(result.message || 'Conflicto de inventario: el stock cambió mientras estaba offline.');
+      return true;
+    }
+    case 'return': {
+      const ret = data as ReturnItem;
+      const { error } = await supabase.from('returns').upsert({
+        id: ret.id,
+        transaction_id: ret.transactionId || null,
+        product_id: ret.productId,
+        quantity: Number(ret.quantity) || 1,
+        reason: ret.reason || '',
+        date: ret.date,
+        status: ret.status || 'pending',
+        type: ret.type || 'refund',
+        notes: ret.notes || null,
+        variant_label: ret.variantLabel || null,
+        branch_id: ret.branchId || null,
+        replacement_product_id: ret.replacementProductId || null,
+        replacement_quantity: ret.replacementQuantity || null,
+        processed_by: ret.processedBy || null,
+        refund_status: ret.refundStatus || (ret.type === 'refund' ? 'pending' : 'not_required'),
+        refund_amount: ret.refundAmount ?? null,
+        refund_currency_code: ret.refundCurrencyCode || null,
+        refund_method: ret.refundMethod || null,
+        refund_bank_card_id: ret.refundBankCardId || null,
+        refund_transaction_id: ret.refundTransactionId || null,
+        received_at: ret.receivedAt || null,
+        refunded_at: ret.refundedAt || null
+      });
+      if (error) throw error;
+      return true;
+    }
+    case 'receipt_config': { const { error } = await supabase.from('settings').upsert({ id: 'global', receipt_config: data }); if (error) throw error; return true; }
+    case 'store_config': {
+      const { data: current, error: readError } = await supabase
+        .from('settings')
+        .select('store_config')
+        .eq('id', 'global')
+        .maybeSingle();
+      if (readError) throw readError;
+      const currentConfig = (current?.store_config && typeof current.store_config === 'object') ? current.store_config : {};
+      const incomingConfig = (data && typeof data === 'object') ? data : {};
+      const mergedConfig = { ...currentConfig, ...incomingConfig };
+      const { error } = await supabase.from('settings').upsert({ id: 'global', store_config: mergedConfig });
+      if (error) throw error;
+      return true;
+    }
+    case 'catalog_config': { const { error } = await supabase.from('settings').upsert({ id: 'global', catalog_config: data }); if (error) throw error; return true; }
+    default: throw new PermanentSyncError(`Tipo de operación offline no soportado: ${String(type)}`);
+  }
+}
+
+export async function processOfflineQueue(): Promise<{ processed: number; failed: number; remaining: number; conflicts: number; errors: Array<{ type: string; actionId: string; message: string; retryCount?: number }> }> {
+  // Nunca inspeccionar una cola todavía no hidratada desde IndexedDB.
+  await waitForOfflineQueueReady();
+  if (isProcessingQueue || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+    return { processed: 0, failed: 0, remaining: getOfflineQueueCount(), conflicts: getOfflineConflictCount(), errors: [] };
+  }
+  const supabase = getSupabase();
+  if (!supabase) return { processed: 0, failed: 0, remaining: getOfflineQueueCount(), conflicts: getOfflineConflictCount(), errors: [{ type: 'system', actionId: 'supabase', message: 'Supabase no está disponible en esta sesión.' }] };
+  const reachability = await checkSupabaseReachability();
+  if (!reachability.ok) {
+    return { processed: 0, failed: 0, remaining: getOfflineQueueCount(), conflicts: getOfflineConflictCount(), errors: [{ type: 'network', actionId: 'connectivity', message: reachability.message || 'Supabase no está accesible todavía.' }] };
+  }
+  const allQueueAtStart = getOfflineQueue();
+  const queueAtStart = allQueueAtStart.filter(item => item.status !== 'conflict');
+  if (!queueAtStart.length) return { processed: 0, failed: 0, remaining: 0, conflicts: getOfflineConflictCount(), errors: [] };
+
+  isProcessingQueue = true;
+  // Procesamos una instantánea estable. Las operaciones que entren mientras
+  // sincronizamos se reconcilian al final y nunca se pierden por reemplazar
+  // memoryQueue con una instantánea vieja.
+  // Orden estable por dependencias reales. No usamos una prioridad global:
+  // hacerlo podría mover una corrección de inventario posterior a una venta
+  // anterior. Solo adelantamos una operación cuando otra operación ENCOLADA
+  // es una dependencia explícita de ella.
+  const allQueued = new Map<string, OfflineQueueItem>();
+  const blockedExistingIds = new Set(
+    allQueueAtStart.filter(q => q.status === 'conflict').map(q => q.id)
+  );
+  const cashBySessionId = new Map<string, OfflineQueueItem[]>();
+  for (const q of allQueueAtStart) {
+    allQueued.set(q.type + ':' + q.actionId, q);
+    if (q.type === 'cash_session' && q.data?.id) {
+      const list = cashBySessionId.get(String(q.data.id)) || [];
+      list.push(q);
+      cashBySessionId.set(String(q.data.id), list);
+    }
+  }
+  const dep = (type: OfflineActionType, id?: string | null) => id ? allQueued.get(type + ':' + id) : undefined;
+  const cashOp = (sessionId: string | undefined, operation: 'open' | 'close' | 'cancel' | 'join' | 'snapshot') => {
+    if (!sessionId) return undefined;
+    const list = cashBySessionId.get(String(sessionId)) || [];
+    return list.find(q => q.data?.__operation === operation ||
+      (operation === 'open' && String(q.actionId).startsWith('cash-open:')) ||
+      (operation === 'close' && String(q.actionId).startsWith('cash-close:')) ||
+      (operation === 'cancel' && String(q.actionId).startsWith('cash-cancel:')) ||
+      (operation === 'join' && String(q.actionId).startsWith('cash-join:'))
+    );
+  };
+  const dependencies = (item: OfflineQueueItem): OfflineQueueItem[] => {
+    const d: OfflineQueueItem[] = [];
+    const data = item.data || {};
+    const add = (x?: OfflineQueueItem) => { if (x && x.id !== item.id) d.push(x); };
+    switch (item.type) {
+      case 'product_delete': {
+        const productId = String(data?.id || '');
+        for (const queued of allQueued.values()) {
+          if (queued.id === item.id) continue;
+          const qd = queued.data || {};
+          const matchesProduct =
+            (queued.type === 'product' && String(qd.id || '') === productId) ||
+            (queued.type === 'transaction' && Array.isArray(qd.items) && qd.items.some((line: any) => {
+              const id = typeof line?.product === 'string' ? line.product : line?.product?.id || line?.productId || line?.product_id;
+              return String(id || '') === productId;
+            })) ||
+            ((queued.type === 'transfer' || queued.type === 'inventory_adjustment' || queued.type === 'inventory_reconcile' || queued.type === 'return_complete') && String(qd.productId || '') === productId) ||
+            (queued.type === 'transfer_bulk' && Array.isArray(qd.items) && qd.items.some((op: any) => String(op?.productId || '') === productId)) ||
+            (queued.type === 'supplier_receive' && Array.isArray((useStore.getState().supplierOrders || []).find((o: any) => o.id === qd.id)?.items) && (useStore.getState().supplierOrders || []).find((o: any) => o.id === qd.id).items.some((line: any) => String(line?.productId || '') === productId));
+          if (matchesProduct) add(queued);
+        }
+        break;
+      }
+      case 'cash_session':
+        if (data.__operation === 'open' || String(item.actionId).startsWith('cash-open:')) {
+          add(dep('branch', data.branchId)); add(dep('user', data.userId));
+        } else if (data.__operation === 'close' || data.__operation === 'cancel' ||
+                   String(item.actionId).startsWith('cash-close:') ||
+                   String(item.actionId).startsWith('cash-cancel:') ||
+                   String(item.actionId).startsWith('cash-join:')) {
+          add(cashOp(data.id, 'open'));
+          if (data.__operation === 'close' || data.__operation === 'cancel' ||
+              String(item.actionId).startsWith('cash-close:') || String(item.actionId).startsWith('cash-cancel:')) {
+            // Un cierre/cancelación debe esperar a TODA operación de venta/liquidación
+            // del turno que esté encolada. No dependemos del reloj local porque una
+            // operación puede reintentarse horas después y recibir un timestamp nuevo.
+            for (const candidate of queueAtStart) {
+              if (candidate.type === 'transaction' && candidate.data?.sessionId === data.id) add(candidate);
+            }
+          }
+        } else {
+          add(cashOp(data.id, 'open'));
+          // Las actualizaciones administrativas/auditorías deben ejecutarse
+          // después de un cierre pendiente para que el cierre no pueda
+          // sobrescribir de nuevo el estado de auditoría.
+          if (String(item.actionId).startsWith('cash-snapshot:')) {
+            add(cashOp(data.id, 'close'));
+          }
+        }
+        break;
+      case 'transaction':
+        add(dep('branch', data.branchId)); add(dep('user', data.userId)); add(dep('customer', data.customerId));
+        add(cashOp(data.sessionId, 'open'));
+        for (const it of data.items || []) add(dep('product', typeof it?.product === 'string' ? it.product : it?.product?.id));
+        break;
+      case 'void_transaction': add(dep('transaction', data.id)); break;
+      case 'return': add(dep('transaction', data.transactionId)); add(dep('product', data.productId)); add(dep('customer', data.customerId)); break;
+      case 'return_complete': add(dep('return', data.id)); break;
+      case 'inventory': case 'inventory_adjustment': case 'inventory_reconcile':
+        add(dep('branch', data.branchId)); add(dep('product', data.productId)); break;
+      case 'transfer_bulk':
+        add(dep('branch', data.fromBranchId)); add(dep('branch', data.toBranchId)); add(dep('user', data.userId));
+        for (const transferItem of Array.isArray(data.items) ? data.items : []) {
+          add(dep('product', transferItem.productId));
+        }
+        break;
+      case 'transfer':
+        add(dep('product', data.productId)); add(dep('branch', data.fromBranchId)); add(dep('branch', data.toBranchId)); add(dep('user', data.userId)); break;
+      case 'supplier_order': add(dep('supplier', data.supplierId)); add(dep('branch', data.branchId)); break;
+      case 'supplier_receive': add(dep('supplier_order', data.id)); break;
+      case 'inventory_audit': add(dep('branch', data.branchId)); add(dep('user', data.userId)); break;
+      case 'audit_start':
+        add(dep('branch', data.branchId)); add(dep('user', data.userId)); break;
+      case 'audit_complete':
+        add(dep('audit_start', 'audit-start:' + data.id));
+        add(dep('branch', data.branchId)); add(dep('user', data.userId)); break;
+      case 'audit_recount':
+        add(dep('audit_start', 'audit-start:' + data.id));
+        add(dep('audit_complete', 'audit:' + data.id));
+        break;
+      case 'audit_approve':
+        add(dep('audit_start', 'audit-start:' + data.id));
+        add(dep('audit_complete', 'audit:' + data.id));
+        for (const candidate of queueAtStart) {
+          if (candidate.type === 'audit_recount' && candidate.data?.id === data.id) add(candidate);
+        }
+        break;
+      case 'branch_delete':
+      case 'category_delete':
+      case 'idn_settlement_price_delete':
+      case 'supplier_delete':
+        break;
+      case 'salary_settlement': add(cashOp(data.sessionId, 'close')); break;
+      case 'bank_transaction': add(dep('bank_card', data.cardId)); add(dep('transaction', data.transactionId)); break;
+      case 'bank_card_balance': add(dep('bank_card', data.id)); break;
+      case 'idn_settlement_price': add(dep('product', data.productId)); add(dep('user', data.userId)); break;
+      case 'time_shift': add(dep('user', data.userId)); break;
+      case 'quote': add(dep('branch', data.branchId)); add(dep('user', data.userId)); add(dep('customer', data.customerId)); break;
+      case 'warranty': add(dep('product', data.productId)); add(dep('transaction', data.transactionId)); add(dep('customer', data.customerId)); break;
+      case 'user': add(dep('branch', data.branchId)); add(dep('branch', data.assignedBranchId)); add(dep('user', data.supervisorId)); break;
+      case 'product': add(dep('category', data.categoryId)); break;
+      case 'customer_delete': break;
+    }
+    return d;
+  };
+
+  const sorted: OfflineQueueItem[] = [];
+  const pending = new Set(queueAtStart.map(x => x.id));
+  while (pending.size) {
+    const ready = queueAtStart
+      .filter(x => pending.has(x.id) && dependencies(x).every(d => !pending.has(d.id)))
+      .sort((a,b) => a.timestamp.localeCompare(b.timestamp) || a.id.localeCompare(b.id));
+    if (!ready.length) {
+      // Cycle protection: preserve deterministic FIFO rather than deadlocking
+      // the entire queue forever because of a malformed dependency graph.
+      const fallback = queueAtStart.filter(x => pending.has(x.id)).sort((a,b) => a.timestamp.localeCompare(b.timestamp) || a.id.localeCompare(b.id));
+      sorted.push(...fallback); break;
+    }
+    for (const item of ready) { sorted.push(item); pending.delete(item.id); }
+  }
+  const startById = new Map(sorted.map(item => [item.id, item]));
+  let processed = 0, failed = 0;
+  const errors: Array<{ type: string; actionId: string; message: string; retryCount?: number }> = [];
+  const remainingFromRun: OfflineQueueItem[] = [];
+  const handledIds = new Set<string>();
+  const failedDependencyIds = new Set<string>();
+
+  for (let index = 0; index < sorted.length; index++) {
+    const item = sorted[index];
+    const itemDependencies = dependencies(item);
+    if (itemDependencies.some(d => failedDependencyIds.has(d.id) || blockedExistingIds.has(d.id))) {
+      // Un padre falló o quedó en conflicto: el hijo permanece en cola y no se
+      // ejecuta con un estado incompleto.
+      remainingFromRun.push({ ...item, status: 'failed' });
+      continue;
+    }
+    item.status = 'processing';
+    try {
+      await processQueueItem(supabase, item);
+      processed++;
+      handledIds.add(item.id);
+      addSyncLog({ level:'success', source:'offline_queue', title:`Item sincronizado (${item.type})`, details:`Operación ${item.actionId} confirmada por Supabase.`, entityType:item.type, actionId:item.actionId });
+    } catch (err:any) {
+      failed++;
+      item.retryCount = (item.retryCount || 0) + 1;
+      const code = err?.code ? ` [${err.code}]` : '';
+      const status = err?.status || err?.statusCode ? ` HTTP ${err?.status || err?.statusCode}` : '';
+      const detail = err?.details ? ` — ${err.details}` : '';
+      const hint = err?.hint ? ` — ${err.hint}` : '';
+      item.lastError = `${err?.message || 'Error desconocido'}${code}${status}${detail}${hint}`;
+      const permanent = err?.permanent === true;
+      // Ninguna operación durable válida se abandona por cantidad de reintentos.
+      // Una tablet puede permanecer offline muchas horas o días; el elemento
+      // queda pendiente hasta una confirmación real o un rechazo explícitamente permanente.
+      item.status = permanent ? 'conflict' : 'failed';
+      failedDependencyIds.add(item.id);
+      remainingFromRun.push(item);
+      errors.push({ type: item.type, actionId: item.actionId, message: item.lastError, retryCount: item.retryCount });
+      addSyncLog({ level:'error', source:'offline_queue', title:`Error al procesar item (${item.type})`, details:item.lastError, entityType:item.type, actionId:item.actionId, retryAttempt:item.retryCount, maxRetries:8 });
+      if (!permanent && (item.type === 'transaction' || item.type === 'cash_session' || item.type === 'transfer' || item.type === 'transfer_bulk' || item.type === 'return_complete')) {
+        // Las operaciones críticas mantienen el orden temporal: una dependencia
+        // fallida no permite que las posteriores la salten.
+        for (let tail = index + 1; tail < sorted.length; tail++) remainingFromRun.push(sorted[tail]);
+        break;
+      }
+    }
+  }
+
+  // Conservar elementos de la instantánea que no fueron procesados por el corte
+  // de dependencia anterior.
+  const runRemainingIds = new Set(remainingFromRun.map(item => item.id));
+  for (const item of sorted) {
+    if (!handledIds.has(item.id) && !runRemainingIds.has(item.id)) remainingFromRun.push(item);
+  }
+
+  // Reconciliar con cambios hechos durante el procesamiento. Un enqueue nuevo
+  // puede tener un ID distinto o actualizar el mismo actionId mientras la RPC
+  // estaba en vuelo. En ambos casos debe sobrevivir a esta ejecución. Si el
+  // usuario lo eliminó explícitamente, no lo reinsertamos.
+  const currentAfterRun = getOfflineQueue();
+  const currentById = new Map(currentAfterRun.map(item => [item.id, item]));
+  const finalById = new Map<string, OfflineQueueItem>();
+  for (const item of remainingFromRun) {
+    if (!isOfflineQueueItemRemoved(item.id)) finalById.set(item.id, item);
+  }
+
+  for (const [id, current] of currentById) {
+    if (isOfflineQueueItemRemoved(id)) continue;
+    const original = startById.get(id);
+    if (!original) {
+      // Operación agregada mientras procesábamos.
+      finalById.set(id, current);
+      continue;
+    }
+    const changedDuringRun = current.timestamp !== original.timestamp ||
+      current.actionId !== original.actionId ||
+      JSON.stringify(current.data) !== JSON.stringify(original.data);
+    if (changedDuringRun) {
+      // Es una versión más reciente de la operación; no puede considerarse
+      // completada por la versión antigua que estaba en vuelo.
+      finalById.set(id, { ...current, status: 'pending' });
+    } else if (!handledIds.has(id)) {
+      // La operación sigue pendiente porque esta ejecución no llegó a confirmarla.
+      finalById.set(id, current);
+    }
+  }
+
+  const finalQueue = Array.from(finalById.values()).sort((a,b) => a.timestamp.localeCompare(b.timestamp) || a.id.localeCompare(b.id));
+  for (const item of sorted) clearOfflineQueueRemovalMark(item.id);
+  // Reconciliamos contra el estado final, no contra la instantánea inicial.
+  // Esto evita que un enqueue concurrente sea borrado por el commit de la cola.
+  try {
+    await persistOfflineQueueSnapshot(finalQueue);
+  } catch (persistenceError: any) {
+    // El servidor puede haber confirmado la operación, pero si la cola local no
+    // pudo persistir su nuevo estado, conservamos todas las operaciones de esta
+    // ejecución para evitar una falsa sensación de sincronización. Las RPC son
+    // idempotentes por sus IDs de operación.
+    const durableFallback: OfflineQueueItem[] = queueAtStart.map(item => ({
+      ...item,
+      status: item.status === 'processing' ? 'pending' : item.status
+    }));
+    const fallbackById = new Map(durableFallback.map(item => [item.id, item]));
+    for (const item of currentAfterRun) fallbackById.set(item.id, item);
+    setOfflineQueueMemory(Array.from(fallbackById.values()));
+    isProcessingQueue = false;
+    const persistenceMessage = persistenceError?.message || 'Error de IndexedDB/localStorage. Las operaciones se conservaron para reintento.';
+    errors.push({ type: 'offline_queue', actionId: 'persistence', message: persistenceMessage });
+    addSyncLog({ level:'error', source:'offline_queue', title:'Cola local no pudo persistirse', details:persistenceMessage, entityType:'offline_queue' });
+    return { processed, failed, remaining: getOfflineQueueCount(), conflicts: getOfflineConflictCount(), errors };
+  }
+
+  isProcessingQueue = false;
+  return { processed, failed, remaining: finalQueue.filter(item => item.status !== 'conflict').length, conflicts: finalQueue.filter(item => item.status === 'conflict').length, errors };
+}
+
+function isManualOfflineSyncEnabled(): boolean {
+  try {
+    const config = useStore.getState().storeConfig;
+    return config?.manualOfflineSync === true;
+  } catch {
+    return false;
+  }
+}
+
+export function initOfflineSyncWatcher(): () => void {
+  if (typeof window === 'undefined') return () => {};
+  let intervalId: any = null;
+  const handleOnline = async () => {
+    if (isManualOfflineSyncEnabled()) return;
+    // Chrome can emit 'online' before DNS/TLS/Internet access to Supabase is
+    // actually usable. Give the connection a short settling window and probe
+    // the REST endpoint before touching the durable queue.
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    const reachability = await checkSupabaseReachability(12000);
+    if (!reachability.ok) return;
+    const count = getOfflineQueueCount();
+    if (!count) return;
+    useStore.getState().addNotification(`Conexión detectada. Sincronizando ${count} operaciones pendientes...`, 'info');
+    try {
+      const res = await processOfflineQueue();
+      if (res.remaining > 0 || res.conflicts > 0) {
+        const details = [
+          res.errors?.length ? res.errors.map(e => `${e.type} · ${e.actionId}: ${e.message}`).join('\n') : '',
+          res.conflicts > 0 ? `${res.conflicts} operación(es) quedaron en conflicto y no se volverán a reintentar hasta resolverlas.` : ''
+        ].filter(Boolean).join('\n');
+        useStore.getState().addNotification(
+          `Sincronización parcial: ${res.processed} procesadas; ${res.remaining} pendientes; ${res.conflicts} en conflicto.`,
+          res.conflicts > 0 ? 'warning' : 'warning',
+          details || undefined
+        );
+      } else if (res.processed > 0) {
+        useStore.getState().addNotification(`Sincronización completada: ${res.processed} operaciones confirmadas.`, 'success');
+      }
+    } catch (e: any) {
+      useStore.getState().addNotification(`No se pudo completar la sincronización: ${e?.message || 'error desconocido'}.`, 'error');
+    }
+  };
+  const handleOffline = () => useStore.getState().addNotification('Sin conexión. El POS continúa trabajando offline.', 'warning');
+  window.addEventListener('online', handleOnline);
+  window.addEventListener('offline', handleOffline);
+  intervalId = setInterval(() => { 
+    if (navigator.onLine && getOfflineQueueCount() && !isProcessingQueue && !isManualOfflineSyncEnabled()) {
+      processOfflineQueue().catch(() => {}); 
+    }
+  }, 30000);
+  if (navigator.onLine && getOfflineQueueCount() && !isManualOfflineSyncEnabled()) processOfflineQueue().catch(() => {});
+  return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); if (intervalId) clearInterval(intervalId); };
+}

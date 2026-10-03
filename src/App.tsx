@@ -1,0 +1,196 @@
+import { useShallow } from 'zustand/react/shallow';
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { useEffect, lazy, Suspense } from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import Layout from "./components/Layout";
+import Login from "./pages/Login";
+import { useStore } from "./store/useStore";
+import { initMultiDeviceRealtimeSync } from "./services/realtimeSync";
+import { initKeyboardViewport } from "./services/keyboardViewport";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { getDevicePerformanceTier, scheduleIdleTask } from "./utils/devicePerformance";
+import { flushLocalStateStorage } from "./services/localStateStorage";
+
+// Code-splitting de rutas para acelerar inicio en tablets y reducir consumo de memoria
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const POS = lazy(() => import("./pages/POS"));
+const Inventory = lazy(() => import("./pages/Inventory"));
+const Returns = lazy(() => import("./pages/Returns"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Customers = lazy(() => import("./pages/Customers"));
+const Transfers = lazy(() => import("./pages/Transfers"));
+const Reports = lazy(() => import("./pages/Reports"));
+const CustomerShop = lazy(() => import("./pages/CustomerShop"));
+const Suppliers = lazy(() => import("./pages/Suppliers"));
+const InventoryAudit = lazy(() => import("./pages/InventoryAudit"));
+const Banks = lazy(() => import("./pages/Banks"));
+
+function PageLoading() {
+  const location = window.location.pathname;
+  const labels: Record<string, string> = {
+    "/": "Cargando Dashboard…",
+    "/pos": "Cargando Punto de Venta…",
+    "/inventory": "Cargando Inventario…",
+    "/inventory-audit": "Cargando Auditoría de Stock…",
+    "/transfers": "Cargando Transferencias…",
+    "/customers": "Cargando Clientes…",
+    "/suppliers": "Cargando Proveedores…",
+    "/banks": "Cargando Cuentas Bancarias…",
+    "/returns": "Cargando Devoluciones…",
+    "/reports": "Cargando Reportes…",
+    "/settings": "Cargando Configuración…",
+    "/shop": "Cargando tienda…",
+  };
+  const label = labels[location] || "Cargando sección…";
+
+  return (
+    <div className="flex-1 min-h-[50vh] relative" aria-live="polite" aria-busy="true">
+      <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none px-4">
+        <div className="omni-loading-bubble">
+          <span className="omni-loading-icon" aria-hidden="true">
+            <span className="omni-loading-spinner" />
+          </span>
+          <span className="min-w-0">{label}</span>
+          <span className="omni-loading-dots" aria-hidden="true">•••</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const { currentUser, isInitialized, restoreTransactionsFromBackup, currentBranchId } = useStore(useShallow((state) => ({ currentUser: state.currentUser, isInitialized: state.isInitialized, restoreTransactionsFromBackup: state.restoreTransactionsFromBackup, currentBranchId: state.currentBranchId })));
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    let active = true;
+
+    const recoverOfflineSales = async () => {
+      try {
+        const { getOfflineQueue, waitForOfflineQueueReady } = await import("./services/offlineQueue");
+        await waitForOfflineQueueReady();
+        if (!active) return;
+
+        const queue = getOfflineQueue();
+        const voidIds = new Set(
+          queue
+            .filter(item => item.type === 'void_transaction' && item.status !== 'conflict')
+            .map(item => String(item.data?.id || item.actionId))
+        );
+        const pendingSales = queue
+          .filter(item =>
+            item.type === 'transaction' &&
+            item.status !== 'conflict' &&
+            item.data?.id &&
+            !voidIds.has(String(item.data.id))
+          )
+          .map(item => item.data)
+          .filter(Boolean);
+
+        if (pendingSales.length > 0) {
+          useStore.setState(state => {
+            const existingIds = new Set((state.transactions || []).map(tx => String(tx.id)));
+            const missing = pendingSales.filter(tx => !existingIds.has(String(tx.id)));
+            return missing.length
+              ? { transactions: [...missing, ...(state.transactions || [])] }
+              : state;
+          });
+          await flushLocalStateStorage();
+        }
+
+        // Mantener también la recuperación legacy ya existente.
+        if (active) restoreTransactionsFromBackup();
+      } catch (error) {
+        console.warn("[App] No se pudieron recuperar ventas pendientes del outbox offline:", error);
+        if (active) restoreTransactionsFromBackup();
+      }
+    };
+
+    void recoverOfflineSales();
+    return () => { active = false; };
+  }, [isInitialized, restoreTransactionsFromBackup]);
+
+  useEffect(() => {
+    return initKeyboardViewport();
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser || getDevicePerformanceTier() === "ultra") return;
+    // Precalentar solo la ruta POS en dispositivos que no estén en el perfil
+    // de 2 GB. En ultra se evita consumir memoria antes de necesitar el POS.
+    return scheduleIdleTask(() => {
+      void import("./pages/POS");
+    }, 1200, 1600);
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // El login activa los motores. El replay offline es un módulo pesado y se
+    // carga solo después de autenticar, mientras que la cola durable ligera ya
+    // está disponible para el store desde el arranque.
+    let active = true;
+    let cleanupOfflineWatcher = () => {};
+
+    import("./services/offlineSync")
+      .then(({ initOfflineSyncWatcher }) => {
+        if (active) cleanupOfflineWatcher = initOfflineSyncWatcher();
+      })
+      .catch((error) => {
+        console.error("[App] No se pudo cargar el motor de sincronización offline:", error);
+      });
+
+    const cleanupRealtimeSync = initMultiDeviceRealtimeSync();
+    return () => {
+      active = false;
+      cleanupOfflineWatcher();
+      cleanupRealtimeSync();
+    };
+  }, [currentUser?.id, currentBranchId]);
+
+  if (!isInitialized) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <ErrorBoundary>
+      <Router>
+        <Suspense fallback={<PageLoading />}>
+          <Routes>
+            <Route path="/shop" element={<CustomerShop />} />
+            
+            <Route path="/*" element={
+              !currentUser ? <Login /> : (
+                <Layout>
+                  <Suspense fallback={<PageLoading />}>
+                    <Routes>
+                      <Route path="/" element={currentUser.role === 'admin' ? <Dashboard /> : <Navigate to="/pos" replace />} />
+                      <Route path="/pos" element={<POS />} />
+                      <Route path="/transfers" element={currentUser.role === 'admin' ? <Transfers /> : <Navigate to="/pos" replace />} />
+                      <Route path="/inventory" element={currentUser.role === 'admin' ? <Inventory /> : <Navigate to="/pos" replace />} />
+                      <Route path="/inventory-audit" element={currentUser.role === 'admin' ? <InventoryAudit /> : <Navigate to="/pos" replace />} />
+                      <Route path="/suppliers" element={currentUser.role === 'admin' ? <Suppliers /> : <Navigate to="/pos" replace />} />
+                      <Route path="/banks" element={currentUser.role === 'admin' ? <Banks /> : <Navigate to="/pos" replace />} />
+                      <Route path="/returns" element={currentUser.role === 'admin' ? <Returns /> : <Navigate to="/pos" replace />} />
+                      <Route path="/customers" element={currentUser.role === 'admin' ? <Customers /> : <Navigate to="/pos" replace />} />
+                      <Route path="/reports" element={currentUser.role === 'admin' ? <Reports /> : <Navigate to="/pos" replace />} />
+                      <Route path="/settings" element={currentUser.role === 'admin' ? <Settings /> : <Navigate to="/pos" replace />} />
+                    </Routes>
+                  </Suspense>
+                </Layout>
+              )
+            } />
+          </Routes>
+        </Suspense>
+      </Router>
+    </ErrorBoundary>
+  );
+}

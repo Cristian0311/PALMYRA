@@ -1,0 +1,1 @@
+-- Elimina el índice duplicado de returns(transaction_id).\nDROP INDEX IF EXISTS public.idx_returns_transaction_id;\n
