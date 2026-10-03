@@ -105,6 +105,19 @@ html, body, #root {
   transition: background-color 200ms ease, color 200ms ease;
 }
 
+/* The POS uses an internal app shell with its own scroll regions.
+   The public landing is a document-length marketing page, so its route
+   temporarily opts the document root into normal vertical scrolling. */
+html.palmyra-landing-active,
+body.palmyra-landing-active,
+#root.palmyra-landing-active {
+  height: auto;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: auto;
+}
+
 html {
   background: var(--bg-primary);
 }
