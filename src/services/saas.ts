@@ -16,6 +16,7 @@ export interface SaaSContext {
     planName: string;
     limits: { warehouses?: number; employees?: number; products?: number; reports?: string; support?: string };
     currentPeriodEnd?: string | null;
+    trialEndsAt?: string | null;
   } | null;
 }
 
@@ -98,7 +99,7 @@ export async function loadSaaSContext(forceRefresh = false): Promise<SaaSContext
     supabase.from('user_roles').select('role_id,roles!inner(key,name)').eq('user_id',authUser.id).eq('company_id',companyId).maybeSingle(),
     supabase.from('user_locations').select('warehouse_id,is_default').eq('user_id',authUser.id).eq('company_id',companyId).order('is_default',{ascending:false}),
     supabase.from('employees').select('id,full_name,base_salary,active').eq('user_id',authUser.id).eq('company_id',companyId).maybeSingle(),
-    supabase.from('subscriptions').select('id,status,plan_id,current_period_end,plans!inner(code,name,limits,features)').eq('company_id',companyId).order('updated_at',{ascending:false}).maybeSingle(),
+    supabase.from('subscriptions').select('id,status,plan_id,current_period_end,trial_ends_at,plans!inner(code,name,limits,features)').eq('company_id',companyId).order('updated_at',{ascending:false}).maybeSingle(),
     supabase.from('role_permissions').select('permissions!inner(key)').eq('company_id',companyId).eq('role_id', (userRole as any)?.role_id || '00000000-0000-0000-0000-000000000000')
   ]);
 
@@ -122,11 +123,20 @@ export async function loadSaaSContext(forceRefresh = false): Promise<SaaSContext
   };
 
   const plan = (subscription as any)?.plans;
+  const trialEndsAt = subscription?.trial_ends_at || null;
+  const currentPeriodEnd = subscription?.current_period_end || null;
+  const nowMs = Date.now();
+  const trialExpired = subscription?.status === 'trialing' && !!trialEndsAt && new Date(trialEndsAt).getTime() <= nowMs;
+  const paidPeriodExpired = subscription?.status === 'active' && !!currentPeriodEnd && new Date(currentPeriodEnd).getTime() <= nowMs;
+  const effectiveCompany = company
+    ? { ...company, account_status: (company.account_status === 'active' && (trialExpired || paidPeriodExpired)) ? 'pending_payment' : company.account_status }
+    : null;
+
   return {
     authUserId: authUser.id,
     user,
     companyId,
-    company: company || null,
+    company: effectiveCompany,
     roleKey,
     warehouseIds,
     subscription: subscription && plan ? {
@@ -135,7 +145,8 @@ export async function loadSaaSContext(forceRefresh = false): Promise<SaaSContext
       planCode: plan.code,
       planName: plan.name,
       limits: plan.limits || {},
-      currentPeriodEnd: subscription.current_period_end
+      currentPeriodEnd,
+      trialEndsAt
     } : null
   };
 }
