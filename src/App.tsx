@@ -228,7 +228,7 @@ export default function App() {
               </Layout>
             )
           } />
-        </Routes>/Routes>
+        </Routes>
         </Suspense>
       </Router>
     </ErrorBoundary>
