@@ -351,14 +351,12 @@ export default function POS() {
   };
 
   const handleFinishIDNAndGoHome = async () => {
-    if (isFinishingIDN) return;
     setIsFinishingIDN(true);
     setPosError("");
 
     try {
       if (currentSession) {
         const closingBalances: Payment[] = [
-          { currencyCode: baseCurrency.code, amount: showIDNReceiptModal?.totalToPay || 0, method: 'cash', exchangeRate: 1 }
         ];
 
         const ok = await closeSession(
@@ -398,7 +396,6 @@ export default function POS() {
   };
 
   const handleCancelAndReturnToEmployeeSelector = async () => {
-    if (isExitingIDN) return;
 
     setIsExitingIDN(true);
     setPosError("");
@@ -461,17 +458,14 @@ export default function POS() {
 
   const handleSaveIDNSettlementPrice = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeIDNWorker?.id || !idnPriceFormProduct) {
       setPosError("Seleccione un producto");
       return;
     }
-    const val = parseFloat(idnPriceFormAmount);
     if (isNaN(val) || val < 0) {
       setPosError("Ingrese un precio válido");
       return;
     }
 
-      p => p.userId === activeIDNWorker.id && p.productId === idnPriceFormProduct
     );
 
     if (existing) {
@@ -480,7 +474,6 @@ export default function POS() {
       addIDNSettlementPrice({
         id: generateId('SP'),
         userId: activeIDNWorker.id,
-        productId: idnPriceFormProduct,
         settlementPrice: val
       });
     }
@@ -886,7 +879,7 @@ export default function POS() {
       id: crypto.randomUUID(),
       sessionId: currentSession.id,
       branchId: currentSession.branchId || currentBranchId,
-      workerName: currentSession.workerName || sessionWorkerName || currentUser?.name || 'Vendedor',
+      workerName: currentSession.workerName || sessionWorkerName || currentUser?.name || 'Empleado',
       type: movementData.type,
       amount: amt,
       currencyCode: movementData.currencyCode,
@@ -1371,8 +1364,8 @@ export default function POS() {
     lines.push("---");
     lines.push(`Ticket ID: ${tx.id}`);
     lines.push(`Fecha: ${new Date(tx.date).toLocaleDateString()} ${new Date(tx.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
-    const sellerDisplay = tx.cashierName || (currentSession?.workerName) || users.find(u => u.id === tx.userId)?.name || 'Vendedor';
-    lines.push(`Vendedor: ${sellerDisplay.toUpperCase()}`);
+    const sellerDisplay = tx.cashierName || (currentSession?.workerName) || users.find(u => u.id === tx.userId)?.name || 'Empleado';
+    lines.push(`Empleado: ${sellerDisplay.toUpperCase()}`);
     const customer = useStore.getState().customers.find(c => c.id === tx.customerId);
     lines.push(`Cliente: ${(customer?.name || 'Consumidor Final').slice(0, 22)}`);
     lines.push("---");
@@ -1493,7 +1486,7 @@ export default function POS() {
     lines.push(`TURNO: ${session.id}`);
     lines.push(`FECHA: ${new Date(session.closingDate || session.closedAt || new Date()).toLocaleDateString()}`);
     lines.push(`HORA: ${new Date(session.closingDate || session.closedAt || new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
-    lines.push(`VENDEDOR: ${(session.workerName || 'VENDEDOR').toUpperCase()}`);
+    lines.push(`EMPLEADO: ${(session.workerName || 'EMPLEADO').toUpperCase()}`);
     lines.push(`SUCURSAL: ${(branches.find(b => b.id === session.branchId)?.name || 'Central').slice(0, 18)}`);
     lines.push("---");
     lines.push("BOLD|PRODUCTOS VENDIDOS:");
@@ -1786,7 +1779,7 @@ export default function POS() {
       return match ? Math.max(max, parseInt(match[1], 10)) : max;
     }, 0);
     const activeSellerId = currentSession.userId || currentUser?.id || 'u1';
-    const activeSellerName = currentSession.workerName || currentUser?.name || 'Vendedor';
+    const activeSellerName = currentSession.workerName || currentUser?.name || 'Empleado';
     const sellerUser = (users || []).find(u => u.id === activeSellerId) || currentUser;
     const effectiveBranchId = currentSession.branchId || sellerUser?.branchId || currentBranchId || (branches[0]?.id || '');
 
@@ -1970,12 +1963,12 @@ export default function POS() {
         setSessionPassword("");
         setOpeningAmount("0");
         setShowOpenShiftModal(false);
-        setPosSuccess(`Turno de ${existingSession.workerName || workerToAssign.name || 'Vendedor'} ya estaba abierto. Continuando con ese turno.`);
+        setPosSuccess(`Turno de ${existingSession.workerName || workerToAssign.name || 'Empleado'} ya estaba abierto. Continuando con ese turno.`);
         setTimeout(() => setPosSuccess(""), 3000);
         return;
       }
 
-      const workerName = workerToAssign.name || trimmedWorkerName || currentUser?.name || 'Vendedor';
+      const workerName = workerToAssign.name || trimmedWorkerName || currentUser?.name || 'Empleado';
       const workerId = workerToAssign.id || currentUser?.id || 'emp-1';
 
       const sessionToOpen: CashRegisterSession = {
@@ -2070,7 +2063,7 @@ export default function POS() {
       return;
     }
 
-    if (isCurrentUserIndependent) {
+    if (false) {
   
     }
 
@@ -2105,7 +2098,7 @@ export default function POS() {
     setCurrentBranch(targetSession.branchId);
     setJoiningSessionId(null);
     setPosError("");
-    setPosSuccess(`Turno de ${targetSession.workerName || 'Vendedor'} reanudado correctamente.`);
+    setPosSuccess(`Turno de ${targetSession.workerName || 'Empleado'} reanudado correctamente.`);
     setTimeout(() => setPosSuccess(""), 3000);
   };
 
@@ -2157,7 +2150,7 @@ export default function POS() {
                 </span>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-bold text-slate-300 uppercase">{activeIDNWorker?.name || 'Vendedor'}</span>
+                <span className="text-[10px] font-bold text-slate-300 uppercase">{activeIDNWorker?.name || 'Empleado'}</span>
                 <span className="w-1 h-1 bg-slate-600 rounded-full"></span>
                 <div className="flex items-center gap-1 bg-rose-500/20 border border-rose-500/40 text-amber-400 px-2 py-0.5 rounded-lg">
                   <Lock className="w-2.5 h-2.5 text-amber-400" />
@@ -2170,34 +2163,31 @@ export default function POS() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {!isCurrentUserIndependent && (
+            {!false && (
               
             <button
               type="button"
               onClick={handleCancelAndReturnToEmployeeSelector}
-              disabled={isExitingIDN}
               className="px-2.5 sm:px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 rounded-xl text-[10px] sm:text-[10px] font-black uppercase transition-all shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {isExitingIDN ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
-              <span>{isExitingIDN ? "Saliendo..." : "Cancelar / Salir"}</span>
             </button>
             )}
 
             {/* Admin worker selector */}
-            {currentUser?.role === 'admin' && !isCurrentUserIndependent && !isSessionIndependent && independentUsers.length > 0 && (
+            {currentUser?.role === 'admin' && !false && !false && [].length > 0 && (
               <div className="flex items-center gap-1.5 bg-slate-800 px-2 py-1 rounded-xl border border-slate-700">
-                <span className="text-[8px] font-bold text-slate-400 uppercase hidden sm:inline">Vendedor:</span>
+                <span className="text-[8px] font-bold text-slate-400 uppercase hidden sm:inline">Empleado:</span>
                 <select
                   onChange={e => {
                     const nextId = e.target.value;
-                    if (nextId && independentUsers.some(u => u.id === nextId)) {
+                    if (nextId && [].some(u => u.id === nextId)) {
                       setSelectedAdminIDNUserId(nextId);
                       setPosError('');
                     }
                   }}
                   className="bg-transparent text-amber-400 text-[10px] font-black uppercase outline-none cursor-pointer"
                 >
-                  {independentUsers.map(u => {
+                  {[].map(u => {
                     return (
                       <option key={u.id} value={u.id} className="bg-slate-800 text-white">
                         {u.name} ({bName})
@@ -2209,7 +2199,7 @@ export default function POS() {
             )}
 
             {/* Back to standard POS button for Admin */}
-            {currentUser?.role === 'admin' && !isCurrentUserIndependent && (
+            {currentUser?.role === 'admin' && !false && (
               <button
                 type="button"
                 onClick={() => setPosViewMode('standard')}
@@ -2422,7 +2412,6 @@ export default function POS() {
           </div>
         </footer>
 
-        {showConfirmIDNModal && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-100 animate-in zoom-in-95">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -2431,7 +2420,7 @@ export default function POS() {
                     <Package className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Vendedor: {activeIDNWorker?.name}</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Empleado: {activeIDNWorker?.name}</p>
                   </div>
                 </div>
                 <button 
@@ -2485,7 +2474,6 @@ export default function POS() {
           </div>
         )}
 
-        {showIDNReceiptModal && (
           <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 z-50 overflow-hidden animate-in fade-in duration-200">
             <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl max-w-lg w-full max-h-[94vh] sm:max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 overflow-hidden">
               <div className="text-center space-y-1 p-3.5 sm:p-4 border-b border-slate-100 dark:border-slate-800 bg-rose-50/40 dark:bg-rose-950/20 shrink-0">
@@ -2493,10 +2481,8 @@ export default function POS() {
                   <CheckCircle className="w-5 h-5" />
                 </div>
                 <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                  {showIDNReceiptModal.workerName} • {showIDNReceiptModal.branchName}
                 </p>
                 <p className="text-[8px] font-medium text-slate-400">
-                  {new Date(showIDNReceiptModal.date).toLocaleString()}
                 </p>
               </div>
 
@@ -2507,12 +2493,10 @@ export default function POS() {
                     <span>Producto / Cantidad</span>
                     <span>Monto Liquidado</span>
                   </div>
-                  {showIDNReceiptModal.details.length === 0 ? (
                     <div className="text-center py-4 text-slate-400 text-[9px] uppercase font-black tracking-widest bg-white dark:bg-slate-800 rounded-lg border border-dashed border-slate-200 dark:border-slate-700">
                       Sin ventas registradas en este turno
                     </div>
                   ) : (
-                    showIDNReceiptModal.details.map((item: any, idx: number) => (
                       <div key={idx} className="flex justify-between items-center bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700 text-xs">
                         <div className="min-w-0 flex-1 pr-2">
                           <p className="font-black text-slate-900 dark:text-white uppercase text-[10px] sm:text-[11px] truncate">{item?.name || 'Producto'}</p>
@@ -2535,7 +2519,6 @@ export default function POS() {
                     <span className="text-[8px] text-rose-700 dark:text-amber-400">Precio liquidación pactado</span>
                   </div>
                   <span className="text-base sm:text-lg font-black text-amber-800 dark:text-amber-300 font-mono">
-                    {baseCurrency.symbol}{showIDNReceiptModal.totalToPay.toLocaleString()} CUP
                   </span>
                 </div>
               </div>
@@ -2545,7 +2528,6 @@ export default function POS() {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => handlePrintIDNThermal(showIDNReceiptModal)}
                     className="py-2.5 px-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-black text-[9px] sm:text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
                   >
                     <Printer className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
@@ -2557,11 +2539,8 @@ export default function POS() {
                 <button
                   type="button"
                   onClick={handleFinishIDNAndGoHome}
-                  disabled={isFinishingIDN}
                   className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-[11px] sm:text-xs uppercase tracking-widest transition-all shadow-md shadow-amber-600/20 active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {isFinishingIDN ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  <span>{isFinishingIDN ? "Finalizando..." : "Finalizar y Volver al Inicio"}</span>
                 </button>
               </div>
             </div>
@@ -2636,7 +2615,7 @@ export default function POS() {
                 Reanudar Turno Abierto
               </h3>
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-4">
-                Turno de {(activeCashSessions || []).find(s => s.id === joiningSessionId)?.workerName || 'Vendedor'}
+                Turno de {(activeCashSessions || []).find(s => s.id === joiningSessionId)?.workerName || 'Empleado'}
               </p>
 
               {posError && (
@@ -2649,7 +2628,7 @@ export default function POS() {
               <form onSubmit={handleJoinExistingSession} className="space-y-3.5">
                 <div className="text-left">
                   <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                    Contraseña del Vendedor del Turno
+                    Contraseña del Empleado del Turno
                   </label>
                   <input
                     type="password"
@@ -2695,7 +2674,7 @@ export default function POS() {
                   </div>
                   <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight leading-none mb-1">Turno Finalizado</h3>
                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">
-                    {lastClosedSession.id} • {lastClosedSession.workerName || 'Vendedor'}
+                    {lastClosedSession.id} • {lastClosedSession.workerName || 'Empleado'}
                   </p>
 
                   <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 text-left space-y-1.5 mb-4">
@@ -2807,10 +2786,10 @@ export default function POS() {
 
                   <form onSubmit={handleOpenSession} className="space-y-2.5">
                     <div className="text-left space-y-2">
-                      {!isCurrentUserIndependent && (
+                      {!false && (
                       <div>
                         <label className="block text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                          Seleccionar Vendedor / Empleado del Turno
+                          Seleccionar Empleado / Empleado del Turno
                         </label>
                         <div className="space-y-1.5">
                           <div className="relative" ref={employeePickerRef}>
@@ -2953,7 +2932,7 @@ export default function POS() {
                       </div>
                     </div>
 
-                    {isWorkerIndependent && (
+                    {false && (
                       <div className="p-1.5 bg-rose-50 border border-amber-200 rounded-xl flex items-center gap-1.5 text-left">
                         <Package className="w-3 h-3 text-amber-600 shrink-0" />
                         <p className="text-[8px] font-black text-amber-800 uppercase tracking-tight">
@@ -2967,7 +2946,7 @@ export default function POS() {
                         <div className="text-left">
                           <div className="flex items-center justify-between mb-1">
                             <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                              Sucursal / Almacén a Operar
+                              Almacén a operar
                             </label>
                             {isBranchLocked && (
                               <span className="flex items-center gap-1 text-[8px] font-black text-rose-700 uppercase bg-rose-100 px-1.5 py-0.5 rounded border border-amber-300">
@@ -3087,7 +3066,7 @@ export default function POS() {
 
               {/* Turnos Abiertos en Curso (Evita duplicidad y permite reanudar con contraseña) */}
               {(() => {
-                if (isCurrentUserIndependent) return null;
+                if (false) return null;
                 const otherOpenSessions = (activeCashSessions || []).filter(s => s.status === 'open');
                 if (otherOpenSessions.length === 0) return null;
                 return (
@@ -3101,7 +3080,7 @@ export default function POS() {
                         <div key={s.id} className="p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <span className="text-[10px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight block truncate">
-                              {s.workerName || 'Vendedor'}
+                              {s.workerName || 'Empleado'}
                             </span>
                             <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wide block">
                               {branches.find(b => b.id === s.branchId)?.name || 'Sucursal'} • ID: {s.id.slice(0, 6)}
@@ -3816,14 +3795,14 @@ export default function POS() {
                         />
                       </div>
 
-                      {/* Vendedor del Turno (Sin volver a pedir el nombre) */}
+                      {/* Empleado del Turno (Sin volver a pedir el nombre) */}
                       <div className="bg-rose-50/60 p-3 rounded-xl border border-rose-100 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <User className="w-4 h-4 text-rose-600" />
-                          <span className="text-[9px] font-black text-rose-900 uppercase tracking-wider">Vendedor Asignado:</span>
+                          <span className="text-[9px] font-black text-rose-900 uppercase tracking-wider">Empleado asignado:</span>
                         </div>
                         <span className="text-xs font-black text-rose-950 uppercase tracking-tight">
-                          {currentSession?.workerName || sessionWorkerName || currentUser?.name || 'Vendedor'}
+                          {currentSession?.workerName || sessionWorkerName || currentUser?.name || 'Empleado'}
                         </span>
                       </div>
 
@@ -3860,7 +3839,7 @@ export default function POS() {
                                 <span className="text-[10px] font-black text-amber-900 uppercase tracking-widest">Liquidación del Turno</span>
                               </div>
                               <span className="text-xs font-black text-amber-900 uppercase">
-                                {sessionUser?.name || "Vendedor"}
+                                {sessionUser?.name || "Empleado"}
                               </span>
                             </div>
                             
@@ -4479,7 +4458,7 @@ export default function POS() {
                   {lastClosedSession.id}
                 </span>
                 <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
-                  {lastClosedSession.workerName || 'Vendedor'}
+                  {lastClosedSession.workerName || 'Empleado'}
                 </span>
               </div>
               <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight mt-0.5">
@@ -4819,8 +4798,8 @@ export default function POS() {
                   <span>{new Date(lastClosedSession.closingDate || lastClosedSession.closedAt || new Date()).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-[10px]">
-                  <span>VENDEDOR:</span>
-                  <span className="font-bold uppercase">{lastClosedSession.workerName || 'VENDEDOR'}</span>
+                  <span>EMPLEADO:</span>
+                  <span className="font-bold uppercase">{lastClosedSession.workerName || 'EMPLEADO'}</span>
                 </div>
                 <div className="flex justify-between text-[10px]">
                   <span>SUCURSAL:</span>
@@ -4869,7 +4848,7 @@ export default function POS() {
 
                 <div className="border-t border-dashed border-black my-4"></div>
                 <div className="pt-6 text-center text-[9px] border-t border-black">
-                  Firma del Vendedor
+                  Firma del Empleado
                 </div>
                 <div className="pt-6 text-center text-[9px] border-t border-black">
                   Firma Supervisor / Administrador
