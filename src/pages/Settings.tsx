@@ -19,7 +19,6 @@ export default function Settings() {
     getBaseCurrency, clearAllData,
     exportData, importData,
     registerEmployee,
-    idnSettlementPrices, addIDNSettlementPrice, updateIDNSettlementPrice, deleteIDNSettlementPrice,
     products,
     inventory, transactions, cashSessions,
     syncWithSupabase,
@@ -48,10 +47,6 @@ export default function Settings() {
     exportData: state.exportData, 
     importData: state.importData, 
     registerEmployee: state.registerEmployee, 
-    idnSettlementPrices: state.idnSettlementPrices, 
-    addIDNSettlementPrice: state.addIDNSettlementPrice, 
-    updateIDNSettlementPrice: state.updateIDNSettlementPrice, 
-    deleteIDNSettlementPrice: state.deleteIDNSettlementPrice, 
     products: state.products, 
     inventory: state.inventory, 
     transactions: state.transactions, 
@@ -124,12 +119,7 @@ export default function Settings() {
   const [newCategory, setNewCategory] = useState({ name: "", department: "" });
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   
-  const [newEmployee, setNewEmployee] = useState({ 
-    name: "", 
-    password: "", 
-    isIndependent: false, 
-    assignedBranchId: "" 
-  });
+  const [newEmployee, setNewEmployee] = useState({ name: "", password: "" });
 
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -139,7 +129,7 @@ export default function Settings() {
   const RESET_OPTIONS = [
     { id: 'inventory', label: 'Inventario', desc: 'Existencias, movimientos y transferencias', icon: Package },
     { id: 'reports', label: 'Reportes e historial', desc: 'Ventas, turnos, devoluciones, garantías y auditorías', icon: Database },
-    { id: 'catalog', label: 'Catálogo', desc: 'Productos, categorías y precios IDN', icon: LayoutGrid },
+    { id: 'catalog', label: 'Catálogo', desc: 'Productos y categorías', icon: LayoutGrid },
     { id: 'customers', label: 'Clientes', desc: 'Clientes registrados', icon: Users },
     { id: 'suppliers', label: 'Proveedores', desc: 'Proveedores registrados', icon: Store },
     { id: 'purchases', label: 'Compras', desc: 'Pedidos a proveedores', icon: CloudDownload },
@@ -152,12 +142,7 @@ export default function Settings() {
   ] as const;
   const [resetSections, setResetSections] = useState<string[]>([]);
 
-  const [selectedIDNUser, setSelectedIDNUser] = useState<User | null>(null);
   const [selectedUserForConfig, setSelectedUserForConfig] = useState<User | null>(null);
-  const [userFilterTab, setUserFilterTab] = useState<'all' | 'normal' | 'idn'>('all');
-  const [idnProductSearch, setIdnProductSearch] = useState("");
-  const [newSettlementPrice, setNewSettlementPrice] = useState<number>(0);
-  const [selectedIDNProduct, setSelectedIDNProduct] = useState<string>("");
 
   const [activeTab, setActiveTab] = useState<'connectivity' | 'company' | 'branches' | 'categories' | 'employees' | 'advanced'>('connectivity');
 
@@ -295,47 +280,11 @@ export default function Settings() {
     }
   };
 
-  const handleAddIDNSettlement = () => {
-    if (!selectedIDNUser || !selectedIDNProduct || newSettlementPrice <= 0) return;
-    
-    const existing = idnSettlementPrices.find(p => p.userId === selectedIDNUser.id && p.productId === selectedIDNProduct);
-    if (existing) {
-      updateIDNSettlementPrice(existing.id, { settlementPrice: newSettlementPrice });
-    } else {
-      addIDNSettlementPrice({
-        id: crypto.randomUUID(),
-        userId: selectedIDNUser.id,
-        productId: selectedIDNProduct,
-        settlementPrice: newSettlementPrice
-      });
-    }
-    setNewSettlementPrice(0);
-    setSelectedIDNProduct("");
-    showToast("Precio de liquidación guardado.");
-  };
-
-  const filteredIDNProducts = useMemo(() => {
-    const query = idnProductSearch.trim().toLowerCase();
-    if (!query) return products.slice(0, 5);
-    return products.filter(p => 
-      p.name.toLowerCase().includes(query) || 
-      p.sku.toLowerCase().includes(query)
-    ).slice(0, 5);
-  }, [products, idnProductSearch]);
-
   const handleRegisterEmployeeManual = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEmployee.name || !newEmployee.password) return;
-    
-    const registered = registerEmployee(newEmployee.name, newEmployee.password);
-    if (newEmployee.isIndependent || newEmployee.assignedBranchId) {
-      updateUser(registered.id, {
-        isIndependent: newEmployee.isIndependent,
-        assignedBranchId: newEmployee.assignedBranchId || undefined,
-        allowedBranches: newEmployee.assignedBranchId ? [newEmployee.assignedBranchId] : undefined
-      });
-    }
-    setNewEmployee({ name: "", password: "", isIndependent: false, assignedBranchId: "" });
+    if (!newEmployee.name.trim() || !newEmployee.password) return;
+    registerEmployee(newEmployee.name.trim(), newEmployee.password);
+    setNewEmployee({ name: "", password: "" });
     showToast("Empleado registrado con éxito. Ya aparecerá en el punto de venta.");
   };
 
@@ -383,7 +332,7 @@ export default function Settings() {
           )}>
             {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
             {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />}
-            {toast.type === 'info' && <Database className="w-5 h-5 text-indigo-400 shrink-0" />}
+            {toast.type === 'info' && <Database className="w-5 h-5 text-rose-400 shrink-0" />}
             <div className="flex-1 text-xs font-bold leading-snug">{toast.message}</div>
             <button onClick={() => setToast(null)} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
               <X className="w-4 h-4 text-slate-400 hover:text-white" />
@@ -397,7 +346,7 @@ export default function Settings() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-secondary p-4 rounded-3xl border border-base shadow-sm">
           <div>
             <h2 className="text-xl font-black text-primary uppercase tracking-tight flex items-center gap-2">
-              <SettingsIcon size={20} className="text-indigo-600" />
+              <SettingsIcon size={20} className="text-rose-600" />
               Configuración
             </h2>
             <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Sistema y Preferencias</p>
@@ -407,7 +356,7 @@ export default function Settings() {
             disabled={isSyncing || !navigator.onLine}
             className={cn(
               "w-full sm:w-auto px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95 disabled:opacity-50",
-              isSyncing ? "bg-slate-100 text-slate-400" : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/20"
+              isSyncing ? "bg-slate-100 text-slate-400" : "bg-rose-600 text-white hover:bg-rose-700 shadow-rose-600/20"
             )}
           >
             {isSyncing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CloudUpload size={14} />}
@@ -434,7 +383,7 @@ export default function Settings() {
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer",
                   isActive 
-                    ? "bg-indigo-600 text-white shadow-xs" 
+                    ? "bg-rose-600 text-white shadow-xs" 
                     : "text-secondary hover:text-primary hover:bg-subtle"
                 )}
               >
@@ -450,23 +399,23 @@ export default function Settings() {
         {/* Conectividad y Sincronización */}
         {activeTab === 'connectivity' && (
           <div className="space-y-4">
-            <div className="bg-secondary rounded-2xl shadow-sm border border-indigo-200 dark:border-indigo-900/30 p-5 space-y-4">
-              <div className="flex items-center gap-3 border-b border-indigo-50 dark:border-indigo-950/30 pb-3">
-                <div className="bg-indigo-50 dark:bg-indigo-950/50 p-2 rounded-lg text-indigo-600 dark:text-indigo-400">
+            <div className="bg-secondary rounded-2xl shadow-sm border border-rose-200 dark:border-rose-900/30 p-5 space-y-4">
+              <div className="flex items-center gap-3 border-b border-rose-50 dark:border-rose-950/30 pb-3">
+                <div className="bg-rose-50 dark:bg-rose-950/50 p-2 rounded-lg text-rose-600 dark:text-rose-400">
                   <Wifi size={16} />
                 </div>
                 <div>
-                  <h3 className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Conectividad y Nube</h3>
+                  <h3 className="text-xs font-black text-rose-600 dark:text-rose-400 uppercase tracking-wider">Conectividad y Nube</h3>
                   <p className="text-[8px] font-bold text-muted uppercase tracking-tight">Control de guardado offline y transferencia de datos</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
-                  <label className="flex items-center justify-between p-3.5 bg-primary border border-base rounded-2xl cursor-pointer group hover:border-indigo-300 transition-all">
+                  <label className="flex items-center justify-between p-3.5 bg-primary border border-base rounded-2xl cursor-pointer group hover:border-rose-300 transition-all">
                     <div className="flex-1 pr-4">
                       <div className="flex items-center gap-2">
-                        <CloudUpload size={14} className="text-indigo-600" />
+                        <CloudUpload size={14} className="text-rose-600" />
                         <span className="text-[11px] font-black text-primary uppercase">Sincronización Manual</span>
                       </div>
                       <p className="text-[9px] text-muted font-medium mt-1 leading-tight">
@@ -485,7 +434,7 @@ export default function Settings() {
                           showToast(`Sincronización manual ${e.target.checked ? 'activada' : 'desactivada'}.`, 'info');
                         }}
                       />
-                      <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                      <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
                     </div>
                   </label>
 
@@ -500,7 +449,7 @@ export default function Settings() {
                 <div className="bg-primary p-4 rounded-2xl border border-base border-dashed flex flex-col justify-between">
                   <div>
                     <h4 className="text-[10px] font-black text-primary uppercase flex items-center gap-2">
-                      <Database size={14} className="text-indigo-600" />
+                      <Database size={14} className="text-rose-600" />
                       Estado de la Base de Datos
                     </h4>
                     <div className="grid grid-cols-2 gap-3 mt-4">
@@ -536,7 +485,7 @@ export default function Settings() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-4 bg-subtle rounded-2xl border border-base">
                   <div className="flex items-center gap-2 mb-2">
-                    <CloudDownload className="w-4 h-4 text-indigo-500" />
+                    <CloudDownload className="w-4 h-4 text-rose-500" />
                     <span className="text-[10px] font-black uppercase text-primary tracking-widest">Generar Backup</span>
                   </div>
                   <p className="text-[9px] text-muted mb-4 font-bold leading-tight">Descarga toda tu información local en un archivo JSON.</p>
@@ -554,7 +503,7 @@ export default function Settings() {
                       URL.revokeObjectURL(url);
                       showToast("Copia de seguridad generada y descargada");
                     }}
-                    className="w-full py-2 bg-indigo-600 text-white rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-indigo-700 transition-all cursor-pointer shadow-md"
+                    className="w-full py-2 bg-rose-600 text-white rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-rose-700 transition-all cursor-pointer shadow-md"
                   >
                     Exportar Datos
                   </button>
@@ -562,7 +511,7 @@ export default function Settings() {
 
                 <div className="p-4 bg-subtle rounded-2xl border border-base">
                   <div className="flex items-center gap-2 mb-2">
-                    <CloudUpload className="w-4 h-4 text-indigo-500" />
+                    <CloudUpload className="w-4 h-4 text-rose-500" />
                     <span className="text-[10px] font-black uppercase text-primary tracking-widest">Restaurar Sistema</span>
                   </div>
                   <p className="text-[9px] text-muted mb-4 font-bold leading-tight">Carga un archivo de respaldo previo para sobrescribir los datos.</p>
@@ -604,7 +553,7 @@ export default function Settings() {
           <div className="space-y-4">
             <div className="bg-secondary rounded-2xl shadow-sm border border-base p-5 space-y-4">
               <div className="flex items-center gap-3 border-b border-base pb-3">
-                <div className="bg-indigo-50 dark:bg-indigo-950/50 p-2 rounded-lg text-indigo-600 dark:text-indigo-400">
+                <div className="bg-rose-50 dark:bg-rose-950/50 p-2 rounded-lg text-rose-600 dark:text-rose-400">
                   <Store size={16} />
                 </div>
                 <div>
@@ -620,7 +569,7 @@ export default function Settings() {
                     type="text" 
                     value={config.storeName}
                     onChange={e => setConfig({ ...config, storeName: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm"
+                    className="w-full px-4 py-2.5 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-rose-500 shadow-sm"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -629,7 +578,7 @@ export default function Settings() {
                     type="text" 
                     value={config.phone}
                     onChange={e => setConfig({ ...config, phone: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm"
+                    className="w-full px-4 py-2.5 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-rose-500 shadow-sm"
                   />
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
@@ -638,14 +587,14 @@ export default function Settings() {
                     type="text" 
                     value={config.address}
                     onChange={e => setConfig({ ...config, address: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm"
+                    className="w-full px-4 py-2.5 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-rose-500 shadow-sm"
                   />
                 </div>
               </div>
               <div className="pt-2 flex justify-end">
                 <button 
                   onClick={handleSaveConfig}
-                  className="px-6 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-md flex items-center gap-2 cursor-pointer"
+                  className="px-6 py-2 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-700 transition-all shadow-md flex items-center gap-2 cursor-pointer"
                 >
                   <Save size={14} />
                   Guardar Cambios
@@ -707,7 +656,7 @@ export default function Settings() {
             {/* Apariencia (Moved here) */}
             <div className="bg-secondary rounded-2xl shadow-sm border border-base p-5 space-y-4">
               <div className="flex items-center gap-3 border-b border-base pb-3">
-                <div className="bg-indigo-600 p-2 rounded-lg text-white">
+                <div className="bg-rose-600 p-2 rounded-lg text-white">
                   <Sparkles size={16} />
                 </div>
                 <div>
@@ -718,8 +667,8 @@ export default function Settings() {
               <div className="flex items-center justify-between bg-subtle p-4 rounded-2xl border border-base">
                 <p className="text-xs font-bold text-primary">Modo Oscuro</p>
                 <div className="flex bg-secondary p-1 rounded-xl border border-base">
-                  <button onClick={() => { const nc = {...config, darkMode:false}; setConfig(nc); updateStoreConfig(nc); }} className={cn("px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer", !config.darkMode ? "bg-indigo-600 text-white" : "text-muted")}>Luz</button>
-                  <button onClick={() => { const nc = {...config, darkMode:true}; setConfig(nc); updateStoreConfig(nc); }} className={cn("px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer", config.darkMode ? "bg-indigo-600 text-white" : "text-muted")}>Noche</button>
+                  <button onClick={() => { const nc = {...config, darkMode:false}; setConfig(nc); updateStoreConfig(nc); }} className={cn("px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer", !config.darkMode ? "bg-rose-600 text-white" : "text-muted")}>Luz</button>
+                  <button onClick={() => { const nc = {...config, darkMode:true}; setConfig(nc); updateStoreConfig(nc); }} className={cn("px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer", config.darkMode ? "bg-rose-600 text-white" : "text-muted")}>Noche</button>
                 </div>
               </div>
             </div>
@@ -746,7 +695,7 @@ export default function Settings() {
         {activeTab === 'employees' && (
           <div className="bg-secondary rounded-2xl shadow-sm border border-base p-5 space-y-4">
             <div className="flex items-center gap-3 border-b border-base pb-3">
-              <div className="bg-indigo-50 dark:bg-indigo-950/50 p-2 rounded-lg text-indigo-600 dark:text-indigo-400">
+              <div className="bg-rose-50 dark:bg-rose-950/50 p-2 rounded-lg text-rose-600 dark:text-rose-400">
                 <Users size={16} />
               </div>
               <div>
@@ -887,334 +836,78 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Comprehensive Employee Configuration Modal */}
+      {/* Configuración de empleado */}
       {selectedUserForConfig && (
-        <div className="fixed inset-0 bg-slate-950/40 dark:bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-secondary w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] border border-base animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-indigo-900 dark:bg-indigo-950/50 p-4 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className={cn("p-2 rounded-xl", selectedUserForConfig.isIndependent ? "bg-amber-500/20 text-amber-400" : "bg-indigo-500/20 text-indigo-400")}>
-                  {selectedUserForConfig.isIndependent ? <Package size={20} /> : <Users size={20} />}
-                </div>
-                <div>
-                  <h3 className="text-xs font-black uppercase tracking-wider">Configuración de Empleado</h3>
-                  <p className="text-[10px] font-bold text-indigo-200/70 uppercase">{selectedUserForConfig.name}</p>
-                </div>
+        <div className="fixed inset-0 bg-slate-950/40 dark:bg-slate-950/80 z-[100] flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-secondary w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] border border-base">
+            <div className="bg-rose-600 p-4 text-white flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider">Configuración de Empleado</h3>
+                <p className="text-[10px] font-bold text-rose-100 uppercase">{selectedUserForConfig.name}</p>
               </div>
-              <button 
-                onClick={() => setSelectedUserForConfig(null)} 
-                className="p-1.5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition-colors cursor-pointer"
-              >
+              <button type="button" onClick={() => setSelectedUserForConfig(null)} className="p-1.5 hover:bg-white/10 rounded-lg">
                 <X size={20} />
               </button>
             </div>
-
             <div className="p-4 sm:p-5 overflow-y-auto custom-scrollbar space-y-5 flex-1 bg-secondary">
-              {/* Type and Role Settings */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="bg-subtle p-3.5 rounded-xl border border-base space-y-2">
-                  <span className="text-[8px] font-black text-muted uppercase tracking-widest block">Tipo de Vendedor</span>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const updated = { ...selectedUserForConfig, isIndependent: false };
-                        setSelectedUserForConfig(updated);
-                        updateUser(selectedUserForConfig.id, { isIndependent: false });
-                      }}
-                      className={cn(
-                        "flex-1 py-2 px-3 rounded-lg font-black text-[9px] uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                        !selectedUserForConfig.isIndependent ? "bg-indigo-600 text-white shadow-sm" : "bg-primary text-muted border border-base"
-                      )}
-                    >
-                      <Users size={14} />
-                      Fijo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const updated = { ...selectedUserForConfig, isIndependent: true };
-                        setSelectedUserForConfig(updated);
-                        updateUser(selectedUserForConfig.id, { isIndependent: true });
-                      }}
-                      className={cn(
-                        "flex-1 py-2 px-3 rounded-lg font-black text-[9px] uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                        selectedUserForConfig.isIndependent ? "bg-amber-600 text-white shadow-sm" : "bg-primary text-muted border border-base"
-                      )}
-                    >
-                      <Package size={14} />
-                      IDN
-                    </button>
-                  </div>
+                  <span className="text-[8px] font-black text-muted uppercase tracking-widest block">Salario Base</span>
+                  <input type="number" min="0" step="0.01" value={employeeSalaries[selectedUserForConfig.id] ?? (selectedUserForConfig.baseSalary || 0)}
+                    onChange={e => {
+                      const val = Number(e.target.value);
+                      setEmployeeSalaries({ ...employeeSalaries, [selectedUserForConfig.id]: val });
+                      updateUser(selectedUserForConfig.id, { baseSalary: val });
+                    }}
+                    className="w-full px-3 py-2 bg-primary border border-base rounded-lg text-xs font-black text-primary outline-none focus:ring-1 focus:ring-rose-500"
+                  />
                 </div>
-
-                {/* Base Salary */}
                 <div className="bg-subtle p-3.5 rounded-xl border border-base space-y-2">
-                  <span className="text-[8px] font-black text-muted uppercase tracking-widest block">
-                    {selectedUserForConfig.isIndependent ? 'Comisión Base (CUP)' : 'Salario por Turno (CUP)'}
-                  </span>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-muted">{baseCurrency.symbol}</span>
-                    <input 
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={employeeSalaries[selectedUserForConfig.id] ?? (selectedUserForConfig.baseSalary || 0)}
-                      onChange={e => {
-                        const val = Number(e.target.value);
-                        setEmployeeSalaries({ ...employeeSalaries, [selectedUserForConfig.id]: val });
-                        updateUser(selectedUserForConfig.id, { baseSalary: val });
-                      }}
-                      className="w-full pl-8 pr-3 py-2 bg-primary border border-base rounded-lg text-xs font-black text-primary outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-
-                {/* Password Section */}
-                <div className="bg-subtle p-3.5 rounded-xl border border-base space-y-2 sm:col-span-2">
-                  <span className="text-[8px] font-black text-muted uppercase tracking-widest block">
-                    Contraseña de Acceso (POS)
-                  </span>
-                  <input 
-                    type="text"
-                    value={selectedUserForConfig.password || ''}
+                  <span className="text-[8px] font-black text-muted uppercase tracking-widest block">Contraseña POS</span>
+                  <input type="password" value={selectedUserForConfig.password || ''}
                     onChange={e => {
                       const newPass = e.target.value;
                       const updated = { ...selectedUserForConfig, password: newPass };
                       setSelectedUserForConfig(updated);
                       updateUser(selectedUserForConfig.id, { password: newPass });
                     }}
-                    className="w-full px-3 py-2 bg-primary border border-base rounded-lg text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
-                    placeholder="Contraseña del empleado"
+                    className="w-full px-3 py-2 bg-primary border border-base rounded-lg text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-rose-500"
+                    placeholder="Nueva contraseña"
                   />
                 </div>
               </div>
-
-              {/* Branch Permissions Section */}
               <div className="bg-subtle p-4 rounded-xl border border-base space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Building2 size={16} className="text-indigo-600" />
-                    <h4 className="text-[10px] font-black text-primary uppercase">
-                      {selectedUserForConfig.isIndependent ? 'Almacén Asignado' : 'Permisos de Sucursales'}
-                    </h4>
-                  </div>
-                </div>
-
-                {selectedUserForConfig.isIndependent ? (
-                  <div>
-                    <select
-                      value={selectedUserForConfig.assignedBranchId || ""}
-                      onChange={(e) => {
-                        const bId = e.target.value;
-                        const updated = { 
-                          ...selectedUserForConfig, 
-                          assignedBranchId: bId,
-                          allowedBranches: bId ? [bId] : undefined 
-                        };
-                        setSelectedUserForConfig(updated);
-                        updateUser(selectedUserForConfig.id, { 
-                          assignedBranchId: bId,
-                          allowedBranches: bId ? [bId] : undefined
-                        });
-                      }}
-                      className="w-full px-3.5 py-2.5 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                    >
-                      <option value="">Seleccionar Almacén</option>
-                      {branches.map(b => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                    {branches.map(branch => {
-                      const isAllowed = selectedUserForConfig.allowedBranches?.includes(branch.id) ?? true;
-                      return (
-                        <label 
-                          key={branch.id} 
-                          className={cn(
-                            "flex items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer",
-                            isAllowed 
-                              ? "bg-primary border-indigo-200 dark:border-indigo-500/50 shadow-sm" 
-                              : "bg-subtle border-base opacity-40 grayscale"
-                          )}
-                        >
-                          <input 
-                            type="checkbox"
-                            checked={isAllowed}
-                            onChange={(e) => {
-                              const current = selectedUserForConfig.allowedBranches ?? branches.map(b => b.id);
-                              const newAllowed = e.target.checked 
-                                ? [...current, branch.id]
-                                : current.filter(id => id !== branch.id);
-                              
-                              const updated = { ...selectedUserForConfig, allowedBranches: newAllowed };
-                              setSelectedUserForConfig(updated);
-                              updateUser(selectedUserForConfig.id, { allowedBranches: newAllowed });
-                            }}
-                            className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
-                          />
-                          <div>
-                            <span className="text-[10px] font-black uppercase text-primary block">{branch.name}</span>
-                            <span className={cn("text-[8px] font-bold", isAllowed ? "text-indigo-600" : "text-muted")}>
-                              {isAllowed ? 'Autorizado' : 'Sin Acceso'}
-                            </span>
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* IDN Custom Settlement Prices */}
-              {selectedUserForConfig.isIndependent && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <DollarSign size={16} className="text-amber-600" />
-                      <h4 className="text-[10px] font-black text-primary uppercase">Precios de Liquidación (CUP)</h4>
-                    </div>
-                  </div>
-
-                  <div className="bg-subtle p-3.5 rounded-xl border border-base space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                        <input 
-                          type="text" 
-                          placeholder="Buscar producto..."
-                          value={idnProductSearch}
-                          onChange={(e) => setIdnProductSearch(e.target.value)}
-                          className="w-full pl-9 pr-4 py-2 bg-primary border border-base rounded-lg text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500"
-                        />
-                        {idnProductSearch && filteredIDNProducts.length > 0 && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-secondary border border-base rounded-xl shadow-xl z-20 overflow-hidden max-h-40 overflow-y-auto">
-                            {filteredIDNProducts.map(p => (
-                              <button
-                                key={p.id}
-                                onClick={() => {
-                                  setSelectedIDNProduct(p.id);
-                                  setIdnProductSearch("");
-                                  const existing = idnSettlementPrices.find(sp => sp.userId === selectedUserForConfig.id && sp.productId === p.id);
-                                  if (existing) setNewSettlementPrice(existing.settlementPrice);
-                                }}
-                                className="w-full px-3.5 py-2 text-left hover:bg-subtle flex items-center justify-between transition-colors border-b border-base last:border-0 cursor-pointer"
-                              >
-                                <span className="text-[10px] font-black uppercase text-primary">{p.name}</span>
-                                <span className="text-[9px] font-bold text-muted">{p.sku}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex gap-2">
-                        <div className="relative flex-1">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-muted">$</span>
-                          <input 
-                            type="number" 
-                            placeholder="Precio"
-                            value={newSettlementPrice || ""}
-                            onChange={(e) => setNewSettlementPrice(Number(e.target.value))}
-                            className="w-full pl-7 pr-3 py-2 bg-primary border border-base rounded-lg text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500"
-                          />
-                        </div>
-                        <button 
-                          onClick={() => {
-                            if (!selectedUserForConfig || !selectedIDNProduct || newSettlementPrice <= 0) return;
-                            const existing = idnSettlementPrices.find(p => p.userId === selectedUserForConfig.id && p.productId === selectedIDNProduct);
-                            if (existing) {
-                              updateIDNSettlementPrice(existing.id, { settlementPrice: newSettlementPrice });
-                            } else {
-                              addIDNSettlementPrice({
-                                id: crypto.randomUUID(),
-                                userId: selectedUserForConfig.id,
-                                productId: selectedIDNProduct,
-                                settlementPrice: newSettlementPrice
-                              });
-                            }
-                            setNewSettlementPrice(0);
-                            setSelectedIDNProduct("");
+                <div className="flex items-center gap-2"><Building2 size={16} className="text-rose-600" /><h4 className="text-[10px] font-black text-primary uppercase">Acceso a almacenes</h4></div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {branches.map(branch => {
+                    const isAllowed = selectedUserForConfig.allowedBranches?.includes(branch.id) ?? true;
+                    return (
+                      <label key={branch.id} className={cn("flex items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer", isAllowed ? "bg-primary border-rose-200 dark:border-rose-500/50" : "bg-subtle border-base opacity-40")}>
+                        <input type="checkbox" checked={isAllowed}
+                          onChange={e => {
+                            const current = selectedUserForConfig.allowedBranches ?? branches.map(b => b.id);
+                            const newAllowed = e.target.checked ? [...current, branch.id] : current.filter(id => id !== branch.id);
+                            const updated = { ...selectedUserForConfig, allowedBranches: newAllowed };
+                            setSelectedUserForConfig(updated);
+                            updateUser(selectedUserForConfig.id, { allowedBranches: newAllowed });
                           }}
-                          disabled={!selectedIDNProduct || newSettlementPrice <= 0}
-                          className="bg-amber-600 text-white px-4 rounded-lg font-black text-[9px] uppercase transition-all shadow-sm disabled:opacity-40 cursor-pointer"
-                        >
-                          Asignar
-                        </button>
-                      </div>
-                    </div>
-
-                    {selectedIDNProduct && (
-                      <div className="flex items-center gap-2 px-1">
-                        <Package size={14} className="text-amber-600" />
-                        <span className="text-[9px] font-black uppercase text-amber-600">
-                          {productById.get(selectedIDNProduct)?.name}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* List of custom prices */}
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
-                    {idnSettlementPrices.filter(p => p.userId === selectedUserForConfig.id).map(p => {
-                      const prod = productById.get(p.productId);
-                      return (
-                        <div key={p.id} className="bg-primary p-2.5 rounded-xl border border-base flex items-center justify-between gap-3 shadow-sm">
-                          <div className="min-w-0 flex-1">
-                            <p className="text-[10px] font-black text-primary uppercase truncate">{prod?.name || 'Producto'}</p>
-                            <p className="text-[8px] font-bold text-muted uppercase">{prod?.sku}</p>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-right">
-                              <p className="text-[10px] font-black text-indigo-600">{baseCurrency.symbol}{p.settlementPrice.toLocaleString()}</p>
-                              <p className="text-[7px] font-bold text-muted uppercase">Liquidación</p>
-                            </div>
-                            <button 
-                              onClick={() => deleteIDNSettlementPrice(p.id)}
-                              className="p-1.5 text-muted hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-all cursor-pointer"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {idnSettlementPrices.filter(p => p.userId === selectedUserForConfig.id).length === 0 && (
-                      <div className="py-4 text-center bg-subtle rounded-xl border border-dashed border-base">
-                        <p className="text-[9px] font-bold text-muted uppercase">Sin precios de liquidación personalizados</p>
-                      </div>
-                    )}
-                  </div>
+                          className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500"
+                        />
+                        <span className="text-[10px] font-black uppercase text-primary">{branch.name}</span>
+                      </label>
+                    );
+                  })}
                 </div>
-              )}
-
-              {/* Action area */}
+              </div>
               <div className="pt-2 border-t border-base flex items-center justify-between">
-                <button
-                   type="button"
-                   onClick={() => {
-                     const userToDeleteTarget = selectedUserForConfig;
-                     setSelectedUserForConfig(null);
-                     if (userToDeleteTarget) {
-                       setUserToDelete({ id: userToDeleteTarget.id, name: userToDeleteTarget.name });
-                     }
-                   }}
-                   className="text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer"
-                 >
-                   <Trash2 size={14} />
-                   Eliminar
-                 </button>
-
-                <button 
-                  type="button"
-                  onClick={() => {
-                    setSelectedUserForConfig(null);
-                  }}
-                  className="bg-indigo-600 text-white px-8 py-2.5 rounded-xl font-black text-[10px] uppercase transition-all shadow-md active:scale-95 cursor-pointer"
-                >
+                <button type="button" onClick={() => {
+                  const target = selectedUserForConfig;
+                  setSelectedUserForConfig(null);
+                  setUserToDelete({ id: target.id, name: target.name });
+                }} className="text-rose-600 hover:bg-rose-50 px-3 py-2 rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5">
+                  <Trash2 size={14} /> Desactivar
+                </button>
+                <button type="button" onClick={() => setSelectedUserForConfig(null)} className="bg-rose-600 text-white px-8 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-md">
                   Listo
                 </button>
               </div>
@@ -1222,172 +915,6 @@ export default function Settings() {
           </div>
         </div>
       )}
-
-      {/* IDN Quick Modal Fallback */}
-      {selectedIDNUser && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="bg-slate-900 p-4 text-white flex items-center justify-between">
-              <div>
-                <h3 className="text-xs font-black uppercase">Gestión de Vendedor Independiente</h3>
-                <p className="text-[9px] font-bold text-slate-400 uppercase">{selectedIDNUser.name}</p>
-              </div>
-              <button onClick={() => setSelectedIDNUser(null)} className="p-1 hover:bg-white/10 rounded-lg transition-colors cursor-pointer">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-5 overflow-y-auto custom-scrollbar space-y-6">
-              {/* Branch Assignment */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-indigo-50 rounded-lg">
-                    <Building2 className="w-3.5 h-3.5 text-indigo-600" />
-                  </div>
-                  <h4 className="text-[10px] font-black text-slate-900 uppercase">Almacén / Sucursal Asignada</h4>
-                </div>
-                <div className="grid grid-cols-1 gap-2">
-                  <select 
-                    value={selectedIDNUser.assignedBranchId || ""}
-                    onChange={(e) => {
-                      const branchVal = e.target.value;
-                      setSelectedIDNUser({ ...selectedIDNUser, assignedBranchId: branchVal });
-                      updateUser(selectedIDNUser.id, { 
-                        assignedBranchId: branchVal,
-                        allowedBranches: branchVal ? [branchVal] : undefined
-                      });
-                    }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all appearance-none cursor-pointer"
-                  >
-                    <option value="">Sin almacén asignado</option>
-                    {branches.map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
-                  <p className="text-[8px] font-bold text-slate-400 uppercase px-1">
-                    * Este vendedor solo podrá operar y liquidar productos de este almacén.
-                  </p>
-                </div>
-              </div>
-
-              {/* Settlement Prices */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-amber-50 rounded-lg">
-                    <DollarSign className="w-3.5 h-3.5 text-amber-600" />
-                  </div>
-                  <h4 className="text-[10px] font-black text-slate-900 uppercase">Precios de Entrega (Liquidación CUP)</h4>
-                </div>
-
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                      <input 
-                        type="text" 
-                        placeholder="Buscar producto..."
-                        value={idnProductSearch}
-                        onChange={(e) => setIdnProductSearch(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                      />
-                      {idnProductSearch && filteredIDNProducts.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-10 overflow-hidden">
-                          {filteredIDNProducts.map(p => (
-                            <button
-                              key={p.id}
-                              onClick={() => {
-                                setSelectedIDNProduct(p.id);
-                                setIdnProductSearch("");
-                                const existing = idnSettlementPrices.find(sp => sp.userId === selectedIDNUser.id && sp.productId === p.id);
-                                if (existing) setNewSettlementPrice(existing.settlementPrice);
-                              }}
-                              className="w-full px-4 py-2 text-left hover:bg-slate-50 flex items-center justify-between transition-colors cursor-pointer"
-                            >
-                              <span className="text-[10px] font-black uppercase text-slate-700">{p.name}</span>
-                              <span className="text-[9px] font-bold text-slate-400">{p.sku}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="flex gap-2">
-                      <div className="relative flex-1">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">$</span>
-                        <input 
-                          type="number" 
-                          placeholder="Precio Entrega (CUP)"
-                          value={newSettlementPrice || ""}
-                          onChange={(e) => setNewSettlementPrice(Number(e.target.value))}
-                          className="w-full pl-7 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                        />
-                      </div>
-                      <button 
-                        onClick={handleAddIDNSettlement}
-                        disabled={!selectedIDNProduct || newSettlementPrice <= 0}
-                        className="bg-amber-600 hover:bg-amber-700 text-white px-4 rounded-xl font-black text-[10px] uppercase transition-all shadow-lg disabled:opacity-50 cursor-pointer"
-                      >
-                        Asignar
-                      </button>
-                    </div>
-                  </div>
-
-                  {selectedIDNProduct && (
-                    <div className="flex items-center gap-2 px-1">
-                      <Package className="w-3 h-3 text-indigo-500" />
-                      <span className="text-[9px] font-black uppercase text-indigo-600">
-                        {products.find(p => p.id === selectedIDNProduct)?.name}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-1">
-                  {idnSettlementPrices.filter(p => p.userId === selectedIDNUser.id).map(p => {
-                    const product = productById.get(p.productId);
-                    return (
-                      <div key={p.id} className="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-4 shadow-sm group">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[10px] font-black text-slate-900 uppercase truncate">{product?.name || 'Producto Eliminado'}</p>
-                          <p className="text-[8px] font-bold text-slate-400 uppercase">{product?.sku}</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-right">
-                            <p className="text-[10px] font-black text-amber-700">{baseCurrency.symbol}{p.settlementPrice.toLocaleString()} CUP</p>
-                            <p className="text-[7px] font-bold text-slate-400 uppercase">Precio Liquidación</p>
-                          </div>
-                          <button 
-                            onClick={() => deleteIDNSettlementPrice(p.id)}
-                            className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {idnSettlementPrices.filter(p => p.userId === selectedIDNUser.id).length === 0 && (
-                    <div className="py-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                      <p className="text-[9px] font-bold text-slate-400 uppercase">Sin precios específicos asignados</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-              <button 
-                onClick={() => setSelectedIDNUser(null)}
-                className="bg-slate-900 text-white px-8 py-2.5 rounded-xl font-black text-[10px] uppercase hover:bg-slate-800 transition-all shadow-lg cursor-pointer"
-              >
-                Cerrar y Guardar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Tasas de Cambio (Compacto Lineal: CUP, USD, EUR) */}
@@ -1414,7 +941,7 @@ export default function Settings() {
                     key={currency.code} 
                     className={cn(
                       "px-3 py-2 rounded-xl border transition-all flex items-center justify-between gap-3",
-                      isBase ? "bg-slate-50 border-slate-200" : "bg-white border-slate-200 hover:border-indigo-300 shadow-xs"
+                      isBase ? "bg-slate-50 border-slate-200" : "bg-white border-slate-200 hover:border-rose-300 shadow-xs"
                     )}
                   >
                     <div className="flex items-center gap-2 shrink-0">
@@ -1433,7 +960,7 @@ export default function Settings() {
                           1.00 (Base)
                         </span>
                       ) : (
-                        <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
+                        <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5 focus-within:ring-2 focus-within:ring-rose-500/20 focus-within:border-rose-500 transition-all">
                           <span className="text-[9px] font-black text-slate-400 mr-1 select-none">
                             1 {currency.code} =
                           </span>
@@ -1443,7 +970,7 @@ export default function Settings() {
                             min="0"
                             value={rates[currency.code] ?? ''}
                             onChange={(e) => setRates({ ...rates, [currency.code]: parseFloat(e.target.value) || 0 })}
-                            className="w-14 sm:w-16 bg-white border border-slate-200 rounded px-1.5 py-0.5 text-right text-xs font-black text-slate-900 outline-none focus:border-indigo-500"
+                            className="w-14 sm:w-16 bg-white border border-slate-200 rounded px-1.5 py-0.5 text-right text-xs font-black text-slate-900 outline-none focus:border-rose-500"
                             placeholder="0.00"
                           />
                           <span className="text-[9px] font-black text-slate-600 ml-1 select-none">
@@ -1459,7 +986,7 @@ export default function Settings() {
 
           <button 
             onClick={handleSaveRates}
-            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-indigo-100 active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-rose-100 active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
           >
             <Save className="w-3.5 h-3.5" />
             Guardar Tasas
@@ -1487,7 +1014,7 @@ export default function Settings() {
                     <div className="text-[8px] font-bold text-muted uppercase tracking-wider">{cat.department}</div>
                   </div>
                   <div className="flex gap-1 shrink-0">
-                    <button onClick={() => { setEditingCategory(cat); setNewCategory({ name: cat.name, department: cat.department }); }} className="p-1.5 text-muted hover:text-indigo-600 rounded-lg transition-colors cursor-pointer" title="Editar"><Edit size={13} /></button>
+                    <button onClick={() => { setEditingCategory(cat); setNewCategory({ name: cat.name, department: cat.department }); }} className="p-1.5 text-muted hover:text-rose-600 rounded-lg transition-colors cursor-pointer" title="Editar"><Edit size={13} /></button>
                     <button onClick={() => setCategoryToDelete({ id: cat.id, name: cat.name })} className="p-1.5 text-muted hover:text-rose-500 rounded-lg transition-colors cursor-pointer" title="Eliminar"><Trash2 size={13} /></button>
                   </div>
                 </div>
@@ -1500,18 +1027,18 @@ export default function Settings() {
                   value={newCategory.name}
                   onChange={e => setNewCategory({ ...newCategory, name: e.target.value })}
                   placeholder="Categoría"
-                  className="flex-[2] min-w-0 w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm" 
+                  className="flex-[2] min-w-0 w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-rose-500 shadow-sm" 
                 />
                 <input 
                   type="text" 
                   value={newCategory.department}
                   onChange={e => setNewCategory({ ...newCategory, department: e.target.value })}
                   placeholder="Depto"
-                  className="flex-1 min-w-0 w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm" 
+                  className="flex-1 min-w-0 w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-rose-500 shadow-sm" 
                 />
                 <button 
                   onClick={handleAddCategory} 
-                  className="p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center shadow-md shrink-0 cursor-pointer"
+                  className="p-2.5 bg-rose-600 text-white rounded-xl hover:bg-rose-700 active:scale-95 transition-all flex items-center justify-center shadow-md shrink-0 cursor-pointer"
                 >
                   {editingCategory ? <Save size={16} /> : <Plus size={16} />}
                 </button>
@@ -1523,7 +1050,7 @@ export default function Settings() {
         {/* Sucursales (Branches) */}
         <div className="bg-secondary rounded-2xl shadow-sm border border-base p-5 space-y-4">
           <div className="flex items-center gap-3 border-b border-base pb-3">
-            <div className="bg-indigo-50 dark:bg-indigo-950/30 p-2 rounded-lg text-indigo-600 dark:text-indigo-400">
+            <div className="bg-rose-50 dark:bg-rose-950/30 p-2 rounded-lg text-rose-600 dark:text-rose-400">
               <Store size={16} />
             </div>
             <div>
@@ -1538,7 +1065,7 @@ export default function Settings() {
                 <div key={branch.id} className="flex justify-between items-center bg-subtle p-2 rounded-xl border border-base group">
                   <div className="text-[11px] font-black text-primary uppercase tracking-tight break-words leading-snug flex-1 min-w-0 mr-2">{branch.name}</div>
                   <div className="flex gap-1 shrink-0 ml-1">
-                    <button onClick={() => { setEditingBranch(branch); setNewBranchName(branch.name); }} className="p-1.5 text-muted hover:text-indigo-600 rounded-lg transition-colors cursor-pointer" title="Editar"><Edit size={13} /></button>
+                    <button onClick={() => { setEditingBranch(branch); setNewBranchName(branch.name); }} className="p-1.5 text-muted hover:text-rose-600 rounded-lg transition-colors cursor-pointer" title="Editar"><Edit size={13} /></button>
                     {branches.length > 1 && (
                       <button onClick={() => setBranchToDelete({ id: branch.id, name: branch.name })} className="p-1.5 text-muted hover:text-rose-500 rounded-lg transition-colors cursor-pointer" title="Eliminar"><Trash2 size={13} /></button>
                     )}
@@ -1553,9 +1080,9 @@ export default function Settings() {
                   value={newBranchName}
                   onChange={e => setNewBranchName(e.target.value)}
                   placeholder="Nombre"
-                  className="flex-1 min-w-0 px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500" 
+                  className="flex-1 min-w-0 px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-rose-500" 
                 />
-                <button onClick={handleAddBranch} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 active:scale-95 transition-all shrink-0 cursor-pointer">
+                <button onClick={handleAddBranch} className="p-2 bg-rose-600 text-white rounded-xl hover:bg-rose-700 active:scale-95 transition-all shrink-0 cursor-pointer">
                   {editingBranch ? <Save size={16} /> : <Plus size={16} />}
                 </button>
               </div>
@@ -1566,7 +1093,7 @@ export default function Settings() {
         {/* Apariencia y Visibilidad (Mejorado para Miopía) */}
         <div className="bg-secondary rounded-2xl shadow-sm border border-base p-5 space-y-4 lg:col-span-3">
           <div className="flex items-center gap-3 border-b border-base pb-3">
-            <div className="bg-indigo-600 p-2 rounded-lg text-white">
+            <div className="bg-rose-600 p-2 rounded-lg text-white">
               <Sparkles size={16} />
             </div>
             <div>
@@ -1578,13 +1105,13 @@ export default function Settings() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6 bg-subtle p-6 rounded-2xl border border-base">
             <div className="flex-1 space-y-2">
               <div className="flex items-center gap-3">
-                <div className="bg-primary text-indigo-600 p-2 rounded-xl shadow-sm border border-base">
+                <div className="bg-primary text-rose-600 p-2 rounded-xl shadow-sm border border-base">
                   {config.darkMode ? <Moon size={16} /> : <Sun size={16} />}
                 </div>
                 <div>
                   <h4 className="text-sm font-black text-primary uppercase tracking-tight">Experiencia Visual</h4>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 text-[8px] font-black rounded-full uppercase tracking-wider border border-indigo-200 dark:border-indigo-800">
+                    <span className="px-2 py-0.5 bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 text-[8px] font-black rounded-full uppercase tracking-wider border border-rose-200 dark:border-rose-800">
                       Enterprise Mode
                     </span>
                   </div>
@@ -1606,7 +1133,7 @@ export default function Settings() {
                   }}
                   className={cn(
                     "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
-                    !config.darkMode ? "bg-indigo-600 text-white shadow-lg" : "text-muted hover:bg-subtle"
+                    !config.darkMode ? "bg-rose-600 text-white shadow-lg" : "text-muted hover:bg-subtle"
                   )}
                 >
                   <Sun size={14} />
@@ -1621,7 +1148,7 @@ export default function Settings() {
                   }}
                   className={cn(
                     "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
-                    config.darkMode ? "bg-indigo-600 text-white shadow-lg" : "text-muted hover:bg-subtle"
+                    config.darkMode ? "bg-rose-600 text-white shadow-lg" : "text-muted hover:bg-subtle"
                   )}
                 >
                   <Moon size={14} />
@@ -1648,7 +1175,7 @@ export default function Settings() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="p-4 bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-base">
               <div className="flex items-center gap-2 mb-2">
-                <CloudDownload className="w-4 h-4 text-indigo-500" />
+                <CloudDownload className="w-4 h-4 text-rose-500" />
                 <span className="text-[10px] font-black uppercase text-primary tracking-widest">Generar Backup</span>
               </div>
               <p className="text-[9px] text-muted mb-4 font-bold">Crea un archivo con toda tu información local: productos, ventas, turnos y configuración.</p>
@@ -1666,7 +1193,7 @@ export default function Settings() {
                   URL.revokeObjectURL(url);
                   showToast("Copia de seguridad generada y descargada", "success");
                 }}
-                className="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-md active:scale-95"
+                className="w-full py-2.5 bg-rose-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-rose-700 transition-all shadow-md active:scale-95"
               >
                 Descargar Archivo JSON
               </button>
@@ -1723,7 +1250,7 @@ export default function Settings() {
         {/* Configuración de Ticket / Recibo */}
         <div className="bg-secondary rounded-2xl shadow-sm border border-base p-5 space-y-4 lg:col-span-3">
           <div className="flex items-center gap-3 border-b border-base pb-3">
-            <div className="bg-indigo-50 dark:bg-indigo-950/30 p-2 rounded-lg text-indigo-600 dark:text-indigo-400">
+            <div className="bg-rose-50 dark:bg-rose-950/30 p-2 rounded-lg text-rose-600 dark:text-rose-400">
               <Plus size={16} />
             </div>
             <div>
@@ -1748,7 +1275,7 @@ export default function Settings() {
                       checked={ticketConfig.autoPrint ?? false}
                       onChange={e => setTicketConfig({...ticketConfig, autoPrint: e.target.checked})}
                     />
-                    <div className="w-8 h-4 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+                    <div className="w-8 h-4 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-rose-600"></div>
                   </div>
                 </label>
 
@@ -1761,7 +1288,7 @@ export default function Settings() {
                       checked={ticketConfig.openDrawer ?? true}
                       onChange={e => setTicketConfig({...ticketConfig, openDrawer: e.target.checked})}
                     />
-                    <div className="w-8 h-4 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+                    <div className="w-8 h-4 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-rose-600"></div>
                   </div>
                 </label>
                 
@@ -1777,7 +1304,7 @@ export default function Settings() {
                       checked={ticketConfig.useWebSerial ?? false}
                       onChange={e => setTicketConfig({...ticketConfig, useWebSerial: e.target.checked})}
                     />
-                    <div className="w-8 h-4 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+                    <div className="w-8 h-4 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-rose-600"></div>
                   </div>
                 </label>
 
@@ -1789,7 +1316,7 @@ export default function Settings() {
                         <button
                           type="button"
                           onClick={() => window.open(window.location.href, '_blank')}
-                          className="text-[8px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded transition-all cursor-pointer"
+                          className="text-[8px] font-bold text-rose-600 hover:text-rose-800 flex items-center gap-1 bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded transition-all cursor-pointer"
                         >
                           <ExternalLink size={10} />
                           Externo
@@ -1849,7 +1376,7 @@ export default function Settings() {
                         }}
                         className="py-2.5 px-3 bg-primary border border-base text-primary rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-subtle transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
                       >
-                        <Usb size={14} className="text-indigo-600" />
+                        <Usb size={14} className="text-rose-600" />
                         USB / Serie
                       </button>
 
@@ -1919,7 +1446,7 @@ export default function Settings() {
                             setPrinterStatus({ type: 'error', message: `Error: ${err.message}` });
                           }
                         }}
-                        className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 cursor-pointer"
+                        className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 cursor-pointer"
                       >
                         <Printer size={15} />
                         Ticket de Prueba
@@ -1933,7 +1460,7 @@ export default function Settings() {
                   <select 
                     value={ticketConfig.printerWidth || '58mm'}
                     onChange={e => setTicketConfig({...ticketConfig, printerWidth: e.target.value as '58mm' | '80mm'})}
-                    className="w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                    className="w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-rose-500 cursor-pointer"
                   >
                     <option value="58mm">58 mm (Pequeña)</option>
                     <option value="80mm">80 mm (Estándar)</option>
@@ -1958,7 +1485,7 @@ export default function Settings() {
                         checked={(ticketConfig as any)[item.key]}
                         onChange={e => setTicketConfig({...ticketConfig, [item.key]: e.target.checked})}
                       />
-                      <div className="w-8 h-4 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+                      <div className="w-8 h-4 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-rose-600"></div>
                     </div>
                   </label>
                 ))}
@@ -1970,15 +1497,15 @@ export default function Settings() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="block text-[8px] font-black text-muted uppercase tracking-widest">Nombre Comercial</label>
-                  <input type="text" value={ticketConfig.businessName} onChange={e => setTicketConfig({...ticketConfig, businessName: e.target.value})} className="w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 transition-all" />
+                  <input type="text" value={ticketConfig.businessName} onChange={e => setTicketConfig({...ticketConfig, businessName: e.target.value})} className="w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-rose-500 transition-all" />
                 </div>
                 <div className="space-y-1">
                   <label className="block text-[8px] font-black text-muted uppercase tracking-widest">Teléfono</label>
-                  <input type="text" value={ticketConfig.businessPhone} onChange={e => setTicketConfig({...ticketConfig, businessPhone: e.target.value})} className="w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 transition-all" />
+                  <input type="text" value={ticketConfig.businessPhone} onChange={e => setTicketConfig({...ticketConfig, businessPhone: e.target.value})} className="w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-rose-500 transition-all" />
                 </div>
                 <div className="sm:col-span-2 space-y-1">
                   <label className="block text-[8px] font-black text-muted uppercase tracking-widest">Dirección</label>
-                  <input type="text" value={ticketConfig.businessAddress} onChange={e => setTicketConfig({...ticketConfig, businessAddress: e.target.value})} className="w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 transition-all" />
+                  <input type="text" value={ticketConfig.businessAddress} onChange={e => setTicketConfig({...ticketConfig, businessAddress: e.target.value})} className="w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-rose-500 transition-all" />
                 </div>
                 <div className="sm:col-span-2 space-y-1">
                   <label className="block text-[8px] font-black text-muted uppercase tracking-widest">Texto al Pie</label>
@@ -1986,7 +1513,7 @@ export default function Settings() {
                     value={ticketConfig.footerText} 
                     onChange={e => setTicketConfig({...ticketConfig, footerText: e.target.value})}
                     rows={2}
-                    className="w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 resize-none transition-all"
+                    className="w-full px-3 py-2 bg-primary border border-base rounded-xl text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-rose-500 resize-none transition-all"
                     placeholder="Ej: ¡Gracias por su compra!"
                   ></textarea>
                 </div>
@@ -1997,7 +1524,7 @@ export default function Settings() {
           <div className="pt-4 border-t border-base">
             <button 
               onClick={handleSaveTicket}
-              className="w-full sm:w-auto px-8 py-3 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full sm:w-auto px-8 py-3 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-700 transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
             >
               <Save size={14} />
               Guardar Configuración
@@ -2005,278 +1532,63 @@ export default function Settings() {
           </div>
         </div>
 
-      {true && (
-        <div className="bg-secondary rounded-2xl shadow-sm border border-base p-5 space-y-4 lg:col-span-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-base pb-3">
-            <div className="flex items-center gap-3">
-              <div className="bg-indigo-50 dark:bg-indigo-950/30 p-2 rounded-lg text-indigo-600 dark:text-indigo-400">
-                <Users size={16} />
-              </div>
-              <div>
-                <h3 className="text-xs font-black text-primary uppercase tracking-wider">Gestión de Personal</h3>
-                <p className="text-[8px] font-bold text-muted uppercase tracking-tight">Vendedores Normales e Independientes (IDN)</p>
-              </div>
-            </div>
-
-            {/* Segmented Filter for Normal vs IDN */}
-            <div className="flex items-center bg-subtle p-1 rounded-xl gap-1 border border-base">
-              <button
-                type="button"
-                onClick={() => setUserFilterTab('all')}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer",
-                  userFilterTab === 'all' 
-                    ? "bg-secondary text-primary shadow-sm border border-base" 
-                    : "text-muted hover:text-primary"
-                )}
-              >
-                Todos
-              </button>
-              <button
-                type="button"
-                onClick={() => setUserFilterTab('normal')}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1 cursor-pointer",
-                  userFilterTab === 'normal' 
-                    ? "bg-indigo-600 text-white shadow-sm" 
-                    : "text-muted hover:text-primary"
-                )}
-              >
-                <Users size={12} />
-                Normales
-              </button>
-              <button
-                type="button"
-                onClick={() => setUserFilterTab('idn')}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1 cursor-pointer",
-                  userFilterTab === 'idn' 
-                    ? "bg-amber-600 text-white shadow-sm" 
-                    : "text-muted hover:text-primary"
-                )}
-              >
-                <Package size={12} />
-                IDN
-              </button>
+      <div className="bg-secondary rounded-2xl shadow-sm border border-base p-5 space-y-4 lg:col-span-3">
+        <div className="flex items-center justify-between gap-3 border-b border-base pb-3">
+          <div className="flex items-center gap-3">
+            <div className="bg-rose-50 dark:bg-rose-950/30 p-2 rounded-lg text-rose-600"><Users size={16} /></div>
+            <div>
+              <h3 className="text-xs font-black text-primary uppercase tracking-wider">Gestión de Personal</h3>
+              <p className="text-[8px] font-bold text-muted uppercase tracking-tight">Empleados y permisos por almacén</p>
             </div>
           </div>
+          <span className="text-[8px] font-black uppercase tracking-widest bg-rose-50 text-rose-600 px-2.5 py-1 rounded-full">Admin no cuenta en el límite</span>
+        </div>
 
-          {/* New Employee Form */}
-          <div className="bg-subtle p-4 rounded-xl border border-base border-dashed">
-            <h4 className="text-[10px] font-black text-primary uppercase mb-3 flex items-center gap-2">
-              <Plus size={14} className="text-indigo-600" />
-              Registrar Personal
-            </h4>
-            <form onSubmit={handleRegisterEmployeeManual} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <label className="block text-[8px] font-black text-muted uppercase tracking-widest">Nombre</label>
-                  <input 
-                    type="text"
-                    placeholder="Nombre completo"
-                    required
-                    value={newEmployee.name}
-                    onChange={e => setNewEmployee({ ...newEmployee, name: e.target.value })}
-                    className="w-full px-3 py-2 bg-primary border border-base rounded-lg text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-[8px] font-black text-muted uppercase tracking-widest">Contraseña</label>
-                  <input 
-                    type="password"
-                    placeholder="Contraseña inicial"
-                    required
-                    value={newEmployee.password}
-                    onChange={e => setNewEmployee({ ...newEmployee, password: e.target.value })}
-                    className="w-full px-3 py-2 bg-primary border border-base rounded-lg text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-[8px] font-black text-muted uppercase tracking-widest">Tipo</label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setNewEmployee({ ...newEmployee, isIndependent: false, assignedBranchId: "" })}
-                      className={cn(
-                        "flex-1 py-2 rounded-lg text-[9px] font-black uppercase border transition-all cursor-pointer",
-                        !newEmployee.isIndependent 
-                          ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" 
-                          : "bg-primary text-secondary border-base"
-                      )}
-                    >
-                      Fijo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNewEmployee({ ...newEmployee, isIndependent: true })}
-                      className={cn(
-                        "flex-1 py-2 rounded-lg text-[9px] font-black uppercase border transition-all cursor-pointer",
-                        newEmployee.isIndependent 
-                          ? "bg-amber-600 text-white border-amber-600 shadow-sm" 
-                          : "bg-primary text-secondary border-base"
-                      )}
-                    >
-                      IDN
-                    </button>
+        <div className="bg-subtle p-4 rounded-xl border border-base border-dashed">
+          <h4 className="text-[10px] font-black text-primary uppercase mb-3 flex items-center gap-2"><Plus size={14} className="text-rose-600" /> Registrar empleado</h4>
+          <form onSubmit={handleRegisterEmployeeManual} className="grid gap-3 sm:grid-cols-3">
+            <input type="text" placeholder="Nombre completo" required value={newEmployee.name} onChange={e => setNewEmployee({ ...newEmployee, name: e.target.value })}
+              className="px-3 py-2 bg-primary border border-base rounded-lg text-xs font-bold outline-none focus:ring-1 focus:ring-rose-500" />
+            <input type="password" placeholder="Contraseña inicial" required value={newEmployee.password} onChange={e => setNewEmployee({ ...newEmployee, password: e.target.value })}
+              className="px-3 py-2 bg-primary border border-base rounded-lg text-xs font-bold outline-none focus:ring-1 focus:ring-rose-500" />
+            <button type="submit" className="bg-rose-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md flex items-center justify-center gap-2">
+              <Plus size={14} /> Registrar
+            </button>
+          </form>
+        </div>
+
+        {users.length === 0 ? (
+          <div className="p-8 bg-subtle rounded-xl text-center text-sm font-bold text-muted">No hay empleados registrados en este espacio.</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {users.map(u => (
+              <div key={u.id} className="p-4 rounded-2xl border border-base bg-secondary shadow-sm flex flex-col gap-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-black text-primary uppercase truncate">{u.name}</p>
+                    <span className="text-[7px] font-black uppercase bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full inline-flex mt-1">
+                      {u.role === 'admin' ? 'Administrador' : 'Empleado'}
+                    </span>
                   </div>
+                  <button type="button" onClick={() => setUserToDelete({ id: u.id, name: u.name })} className="p-1.5 text-muted hover:text-rose-600 hover:bg-rose-50 rounded-lg" title="Desactivar empleado"><Trash2 size={14}/></button>
                 </div>
-              </div>
-
-              {newEmployee.isIndependent && (
-                <div className="bg-amber-50/50 dark:bg-amber-900/20 p-3 rounded-xl border border-amber-100 dark:border-amber-800/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <Package size={16} className="text-amber-600" />
-                    <div>
-                      <p className="text-[9px] font-black text-amber-900 dark:text-amber-200 uppercase">Almacén Exclusivo</p>
-                      <p className="text-[7px] font-bold text-amber-700 dark:text-amber-400 uppercase">Stock asignado para IDN</p>
-                    </div>
-                  </div>
-                  <select 
-                    value={newEmployee.assignedBranchId}
-                    onChange={e => setNewEmployee({ ...newEmployee, assignedBranchId: e.target.value })}
-                    className="w-full sm:w-64 bg-primary border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2 text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-amber-500"
-                  >
-                    <option value="">Seleccionar Almacén</option>
-                    {branches.map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
+                <div className="bg-subtle p-2.5 rounded-xl border border-base text-[9px] space-y-1.5">
+                  <div className="flex justify-between font-bold text-muted"><span>Almacenes</span><span className="text-primary font-black">{(u.allowedBranches || branches.map(b => b.id)).length === branches.length ? 'Todos' : `${(u.allowedBranches || []).length} autorizados`}</span></div>
+                  <div className="flex justify-between font-bold text-muted"><span>Salario base</span><span className="text-primary font-black">{baseCurrency.symbol}{(employeeSalaries[u.id] ?? u.baseSalary ?? 0).toLocaleString()}</span></div>
                 </div>
-              )}
-
-              <div className="flex justify-end pt-1">
-                <button 
-                  type="submit"
-                  className="w-full sm:w-auto px-6 py-2 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2"
-                >
-                  <Plus size={14} />
-                  Registrar
+                <button type="button" onClick={() => setSelectedUserForConfig(u)} className="w-full py-2 px-3 rounded-xl bg-rose-600 text-white font-black text-[9px] uppercase tracking-wider flex items-center justify-center gap-1.5">
+                  <SettingsIcon size={14}/> Configuración
                 </button>
               </div>
-            </form>
+            ))}
           </div>
-          
-          {/* Employee Cards Grid (Compact & Tablet Optimized) */}
-          {users.length === 0 ? (
-            <div className="p-8 bg-subtle rounded-xl text-center text-sm font-bold text-muted">
-              No hay usuarios o trabajadores registrados en el sistema.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {users
-                  .filter(u => {
-                    if (userFilterTab === 'normal') return !u.isIndependent;
-                    if (userFilterTab === 'idn') return u.isIndependent;
-                    return true;
-                  })
-                  .map(u => {
-                    const isIdn = u.isIndependent;
-                    const assignedBranchName = branches.find(b => b.id === u.assignedBranchId)?.name;
-                    const allowedCount = (u.allowedBranches || branches.map(b => b.id)).length;
+        )}
 
-                    return (
-                      <div 
-                        key={u.id} 
-                        className={cn(
-                          "p-3.5 rounded-2xl border transition-all flex flex-col justify-between gap-3 shadow-sm hover:shadow-md",
-                          isIdn 
-                            ? "bg-amber-50/10 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/50" 
-                            : "bg-secondary border-base"
-                        )}
-                      >
-                        {/* Header card */}
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <p className="text-xs font-black text-primary uppercase truncate">{u.name}</p>
-                              <span className="text-[7px] font-black uppercase bg-subtle px-1.5 py-0.5 rounded text-muted">
-                                {u.role === 'admin' ? 'Admin' : 'Empleado'}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1 mt-1">
-                              <span className={cn(
-                                "text-[7px] font-black uppercase px-2 py-0.5 rounded-full inline-flex items-center gap-1 border",
-                                isIdn 
-                                  ? "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800" 
-                                  : "bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-800"
-                              )}>
-                                {isIdn ? <Package size={10} /> : <Users size={10} />}
-                                {isIdn ? 'Vendedor IDN' : 'Fijo / Normal'}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Quick Delete */}
-                          <button
-                            type="button"
-                            onClick={() => setUserToDelete({ id: u.id, name: u.name })}
-                            className="p-1.5 text-muted hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors cursor-pointer"
-                            title="Desactivar Empleado"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-
-                        {/* Middle info */}
-                        <div className="bg-subtle p-2.5 rounded-xl border border-base text-[9px] space-y-1">
-                          <div className="flex justify-between font-bold text-muted">
-                            <span>Sucursales:</span>
-                            {isIdn ? (
-                              <span className={assignedBranchName ? "text-indigo-600 dark:text-indigo-400 font-black" : "text-rose-600 font-black"}>
-                                {assignedBranchName ? `📍 ${assignedBranchName}` : '⚠️ Sin asignar'}
-                              </span>
-                            ) : (
-                              <span className="text-primary font-black">
-                                {allowedCount === branches.length ? 'Todas' : `${allowedCount} autorizadas`}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex justify-between font-bold text-muted">
-                            <span>Salario Base:</span>
-                            <span className="text-primary font-black">
-                              {baseCurrency.symbol}{(employeeSalaries[u.id] ?? (u.baseSalary || 0)).toLocaleString()} CUP
-                            </span>
-                          </div>
-                          {isIdn && (
-                            <div className="flex justify-between font-bold text-muted">
-                              <span>Precios Especiales:</span>
-                              <span className="text-amber-600 font-black">
-                                {idnSettlementPrices.filter(sp => sp.userId === u.id).length} asignados
-                              </span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Action buttons */}
-                        <button
-                          type="button"
-                          onClick={() => setSelectedUserForConfig(u)}
-                          className={cn(
-                            "w-full py-2 px-3 rounded-xl font-black text-[9px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer",
-                            isIdn 
-                              ? "bg-amber-600 text-white" 
-                              : "bg-indigo-600 text-white"
-                          )}
-                        >
-                          <SettingsIcon size={14} />
-                          Configuración
-                        </button>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-          )}
-          
-          <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/50 p-3 rounded-xl flex gap-3">
-            <InfoTooltip text="Configura aquí el pago base y los accesos. Cada empleado puede configurarse con permisos individuales de sucursales o como vendedor independiente (IDN) con almacén exclusivo y precios de liquidación." />
-            <p className="text-[9px] text-amber-700 dark:text-amber-300 font-medium leading-relaxed">
-              <strong>Tip:</strong> Haz clic en <strong>Configuración</strong> para modificar sucursales, contraseñas o ajustar precios de liquidación IDN.
-            </p>
-          </div>
+        <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/50 p-3 rounded-xl flex gap-3">
+          <InfoTooltip text="Configura salarios y acceso por almacén. El administrador de la empresa no se cuenta dentro del límite de empleados del plan." />
+          <p className="text-[9px] text-rose-700 dark:text-rose-300 font-medium leading-relaxed">Los límites de empleados se validan en el servidor antes de aceptar nuevos registros.</p>
         </div>
-      )}
+      </div>
 
       {/* Zona Peligrosa */}
       <div className="bg-secondary rounded-2xl shadow-sm border border-red-200 dark:border-red-900/30 p-5 space-y-4 lg:col-span-3">
@@ -2342,7 +1654,7 @@ export default function Settings() {
                       setIsLoading(false);
                     }
                   }}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md active:scale-95"
+                  className="px-4 py-2 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md active:scale-95"
                 >
                   Confirmar
                 </button>
@@ -2350,7 +1662,7 @@ export default function Settings() {
             ) : (
               <button
                 onClick={() => setShowConfirmCache(true)}
-                className="w-full sm:w-auto px-6 py-3 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full sm:w-auto px-6 py-3 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
               >
                 <RefreshCw size={14} />
                 Limpiar Caché
