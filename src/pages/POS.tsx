@@ -1611,8 +1611,8 @@ export default function POS() {
     }
     // Defensa en profundidad: una cuenta PALMYRA nunca puede vender usando un
     // turno o almacén que pertenezca a otra identidad/sucursal.
-    if (false && currentUser?.id) {
-      const assignedBranchId = currentUser.branchId || currentUser.branchId ||
+    if (currentUser?.role !== 'admin' && currentUser?.id) {
+      const assignedBranchId = currentUser.branchId ||
         (currentUser.allowedBranches?.length === 1 ? currentUser.allowedBranches[0] : null);
       const ownsSession = currentSession.userId === currentUser.id ||
         currentSession.workingEmployeeIds?.includes(currentUser.id);
@@ -1978,7 +1978,7 @@ export default function POS() {
       return;
     }
 
-    if (false) {
+    if (currentUser?.role !== 'admin') {
       const assignedBranchId = currentUser?.branchId ||
         (currentUser?.allowedBranches?.length === 1 ? currentUser.allowedBranches[0] : null);
       const ownIdentity = targetSession.userId === currentUser?.id ||
@@ -2101,7 +2101,7 @@ export default function POS() {
                       setPosError("");
                     }}
                     placeholder="Ingresa la contraseña"
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 dark:bg-slate-800 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 dark:bg-slate-800 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
 
@@ -2119,7 +2119,7 @@ export default function POS() {
                   </button>
                   <button
                     type="submit"
-                    className="py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-[10px] uppercase tracking-wider transition-all shadow-sm"
+                    className="py-2.5 bg-rose-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-[10px] uppercase tracking-wider transition-all shadow-sm"
                   >
                     Entrar al Turno
                   </button>
@@ -2329,7 +2329,7 @@ export default function POS() {
                                           }}
                                           className={cn(
                                             "w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left transition-colors",
-                                            isSelected ? "bg-indigo-100 text-indigo-900" : "hover:bg-slate-50 text-slate-900"
+                                            isSelected ? "bg-rose-100 text-rose-900" : "hover:bg-slate-50 text-slate-900"
                                           )}
                                         >
                                           <div className="min-w-0">
@@ -2338,9 +2338,9 @@ export default function POS() {
                                             </span>
                                             <span className={cn(
                                               "block text-[7px] font-black uppercase tracking-wider mt-0.5",
-                                              false ? "text-amber-700" : "text-slate-400"
+                                              u.role === 'admin' ? "text-rose-700" : "text-slate-400"
                                             )}>
-                                              {false ? "EMPLEADO" : (u.role === 'admin' ? "ADMINISTRADOR" : "EMPLEADO")}
+                                              {u.role === 'admin' ? "ADMINISTRADOR" : "EMPLEADO"}
                                             </span>
                                           </div>
                                           <span className={cn(
@@ -2366,12 +2366,12 @@ export default function POS() {
                           </div>
 
                           <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pt-0.5 text-[7px] font-black uppercase tracking-wider">
-                            <span className="inline-flex items-center gap-1 text-indigo-700">
+                            <span className="inline-flex items-center gap-1 text-rose-700">
                               <span className="w-2 h-2 rounded-full bg-indigo-600" />
                               EMPLEADO
                             </span>
-                            <span className="inline-flex items-center gap-1 text-amber-700">
-                              <span className="w-2 h-2 rounded-full bg-amber-500" />
+                            <span className="inline-flex items-center gap-1 text-rose-700">
+                              <span className="w-2 h-2 rounded-full bg-rose-500" />
                               EMPLEADO PALMYRA
                             </span>
                             <span className="inline-flex items-center gap-1 text-emerald-700">
@@ -2385,7 +2385,7 @@ export default function POS() {
 
                       <div>
                         <label className="block text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                          {false ? 'Contraseña de tu cuenta PALMYRA' : 'Contraseña del Empleado Seleccionado'}
+                          {currentUser?.role === 'admin' ? 'Contraseña del Empleado Seleccionado' : 'Contraseña del Empleado'}
                         </label>
                         <input
                           type="password"
