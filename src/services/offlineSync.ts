@@ -336,21 +336,9 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
       return true;
     }
     case 'branch_delete': {
-      const id = String(data?.id || '');
-      if (!id) throw new PermanentSyncError('Eliminación de sucursal sin ID');
-      const { count: invCount, error: invError } = await supabase.from('inventory').select('*', { count: 'exact', head: true }).eq('branch_id', id);
-      const { count: txCount, error: txError } = await supabase.from('transactions').select('*', { count: 'exact', head: true }).eq('branch_id', id);
-      const { count: csCount, error: csError } = await supabase.from('cash_sessions').select('*', { count: 'exact', head: true }).eq('branch_id', id);
-      if (invError || txError || csError) throw invError || txError || csError;
-      if ((invCount || 0) > 0 || (txCount || 0) > 0 || (csCount || 0) > 0) {
-        const { error } = await supabase.from('branches').update({ is_active: false }).eq('id', id);
-        if (error) throw error;
-      } else {
-        const { error: usersError } = await supabase.from('users').update({ branch_id: null, assigned_branch_id: null }).eq('branch_id', id);
-        if (usersError) throw usersError;
-        const { error } = await supabase.from('branches').delete().eq('id', id);
-        if (error) throw error;
-      }
+      const { deleteBranchFromSupabase } = await import('./supabaseSync');
+      const ok = await deleteBranchFromSupabase(String(data?.id||''));
+      if(!ok) throw new Error('No se pudo desactivar el almacén en PALMYRA.');
       return true;
     }
     case 'category_delete': {
@@ -374,42 +362,24 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
       return true;
     }
     case 'salary_settlement': {
-      const settlement = data;
-      const { error } = await supabase.from('salary_settlements').upsert({
-        id: settlement.id, user_id: settlement.userId || null, user_name: settlement.userName || '',
-        session_id: settlement.sessionId || null, base_salary: Number(settlement.baseSalary) || 0,
-        sales_goal: Number(settlement.salesGoal) || 0, commissions: Number(settlement.commissions) || 0,
-        total: Number(settlement.total) || 0, date: settlement.date, status: settlement.status || 'pending'
-      });
-      if (error) throw error;
-
-      const { data: persisted, error: verifyError } = await supabase
-        .from('salary_settlements')
-        .select('id,user_id,session_id,total,status')
-        .eq('id', settlement.id)
-        .maybeSingle();
-      if (verifyError) throw verifyError;
-      if (!persisted) throw new Error('Liquidación salarial no confirmada en Supabase después del replay.');
-      return true;
+      const { pushSalarySettlementToSupabase } = await import('./supabaseSync');
+      if(!await pushSalarySettlementToSupabase(data as SalarySettlement)) throw new Error('No se pudo sincronizar la nómina.'); return true;
     }
     case 'customer': {
-      const customer = data as Customer;
-      const { error } = await supabase.from('customers').upsert({ id: customer.id, name: customer.name, phone: customer.phone || null, email: customer.email || null, tax_id: customer.taxId || null });
-      if (error) throw error; return true;
+      const { pushCustomerToSupabase } = await import('./supabaseSync');
+      if(!await pushCustomerToSupabase(data as Customer)) throw new Error('No se pudo sincronizar el cliente.'); return true;
     }
     case 'customer_delete': {
-      const { error } = await supabase.from('customers').delete().eq('id', data.id);
-      if (error) throw error; return true;
+      const { deleteCustomerFromSupabase } = await import('./supabaseSync');
+      if(!await deleteCustomerFromSupabase(String(data.id))) throw new Error('No se pudo eliminar el cliente.'); return true;
     }
     case 'branch': {
-      const b = data as Branch;
-      const { error } = await supabase.from('branches').upsert({ id: b.id, name: b.name, address: b.address || null, phone: b.phone || null, is_active: b.isActive !== false, is_main: b.isMain === true });
-      if (error) throw error; return true;
+      const { pushBranchToSupabase } = await import('./supabaseSync');
+      if(!await pushBranchToSupabase(data as Branch)) throw new Error('No se pudo sincronizar el almacén.'); return true;
     }
     case 'category': {
-      const c = data as Category;
-      const { error } = await supabase.from('categories').upsert({ id: c.id, name: c.name, department: c.department || 'General', description: c.description || null, color: c.color || null, image: c.image || null });
-      if (error) throw error; return true;
+      const { pushCategoryToSupabase } = await import('./supabaseSync');
+      if(!await pushCategoryToSupabase(data as Category)) throw new Error('No se pudo sincronizar la categoría.'); return true;
     }
     case 'product_delete': {
       const productId = String(data?.id || '');
@@ -419,124 +389,56 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
       return true;
     }
     case 'product': {
-      const p = data as Product;
-      const { error } = await supabase.from('products').upsert({ id: p.id, name: p.name, sku: p.sku || null, barcode: p.barcode || null, cost_price: p.costPrice || 0, price: p.price || 0, margin: p.margin || 0, category_id: p.categoryId || null, color: p.color || null, commission_value: p.commissionValue || 0, unit: p.unit || 'unidad', status: p.status || 'active', min_stock_alert: p.minStockAlert || 5, has_serial: p.hasSerial || false, warranty_days: p.warrantyDays || 0, is_kit: p.isKit || false, kit_items: p.kitItems || [] });
-      if (error) {
-        const msg = String(error.message || '');
-        if (String(error.code || '') === 'P0001' || msg.includes('PRODUCT_DELETED')) {
-          throw new PermanentSyncError('El producto ya fue eliminado permanentemente; se descarta la edición pendiente.');
-        }
-        throw error;
-      }
-      return true;
+      const { pushProductToSupabase } = await import('./supabaseSync');
+      if(!await pushProductToSupabase(data as Product)) throw new Error('No se pudo sincronizar el producto.'); return true;
     }
     case 'user': {
-      const u = data;
-      const email = u.email && String(u.email).trim() ? u.email : `${String(u.name || 'user').toLowerCase().replace(/[^a-z0-9]/g, '')}_${String(u.id).slice(0, 6)}@system.local`;
-      const { error } = await supabase.from('users').upsert({ id:u.id, name:u.name, email, password:u.password || null, role:u.role || 'employee', base_salary:u.baseSalary || 0, sales_goal:u.salesGoal || 0, branch_id:u.branchId || null, allowed_branches:u.allowedBranches || [], permissions:u.permissions || [], is_active:u.isActive !== false });
-      if (error) throw error; return true;
+      const { pushUserToSupabase } = await import('./supabaseSync');
+      if(!await pushUserToSupabase(data as User)) throw new Error('No se pudo sincronizar el empleado.'); return true;
     }
-    case 'currency': { const c=data; const {error}=await supabase.from('currencies').upsert({code:c.code,name:c.name,symbol:c.symbol,rate_to_base:c.rateToBase,is_base:c.isBase},{onConflict:'code'}); if(error) throw error; return true; }
-    case 'warranty': { const d=data; const {error}=await supabase.from('warranties').upsert({id:d.id,product_id:d.productId,product_name:d.productName,transaction_id:d.transactionId,customer_id:d.customerId,customer_name:d.customerName,purchase_date:d.purchaseDate,expiry_date:d.expiryDate,serial_number:d.serialNumber,status:d.status}); if(error) throw error; return true; }
-    case 'time_shift': { const d=data; const {error}=await supabase.from('time_shifts').upsert({id:d.id,user_id:d.userId,clock_in:d.clockIn,clock_out:d.clockOut,notes:d.notes}); if(error) throw error; return true; }
-    case 'quote': { const d=data; const {error}=await supabase.from('quotes').upsert({id:d.id,branch_id:d.branchId,user_id:d.userId,customer_id:d.customerId,date:d.date,subtotal:d.subtotal,tax:d.tax,total:d.total,items:d.items||[],status:d.status,notes:d.notes}); if(error) throw error; return true; }
-    case 'bank_card': {
-      const d = data;
-      if (d.__metadata_only) {
-        const payload = {
-          name: d.name || d.bankName || 'Tarjeta Bancaria',
-          bank: d.bank || d.bankName || 'Banco',
-          bank_name: d.bankName || d.bank || 'Banco',
-          card_holder: d.cardHolder || 'Titular',
-          account_number: d.accountNumber || d.lastFourDigits || d.lastFour || '',
-          phone: d.phone || '',
-          last_four_digits: d.lastFourDigits || d.lastFour || (d.accountNumber ? String(d.accountNumber).slice(-4) : '0000'),
-          currency: d.currency || 'CUP',
-          color: d.color || 'from-indigo-600 to-purple-800',
-          is_active: d.isActive !== false
-        };
-        const { data: updatedRows, error } = await supabase
-          .from('bank_cards')
-          .update(payload)
-          .eq('id', d.id)
-          .select('id');
-        if (error) throw error;
-        if (!updatedRows?.length) throw new Error('La cuenta bancaria no existe para actualizar sus datos.');
-        return true;
-      }
-
-      const { error } = await supabase.from('bank_cards').upsert({
-        id: d.id,
-        name: d.name || d.bankName || 'Tarjeta Bancaria',
-        bank: d.bank || d.bankName || 'Banco',
-        bank_name: d.bankName || d.bank || 'Banco',
-        card_holder: d.cardHolder || 'Titular',
-        account_number: d.accountNumber || d.lastFourDigits || d.lastFour || '',
-        phone: d.phone || '',
-        last_four_digits: d.lastFourDigits || d.lastFour || (d.accountNumber ? String(d.accountNumber).slice(-4) : '0000'),
-        balance: Number(d.balance) || 0,
-        currency: d.currency || 'CUP',
-        color: d.color || 'from-indigo-600 to-purple-800',
-        is_active: d.isActive !== false
-      });
-      if (error) throw error;
+    case 'currency': {
+      // Las monedas base son globales en PALMYRA; no se editan desde la cola offline.
       return true;
     }
+    case 'warranty': {
+      const { pushWarrantyToSupabase } = await import('./supabaseSync');
+      if(!await pushWarrantyToSupabase(data as Warranty)) throw new Error('No se pudo sincronizar la garantía.'); return true;
+    }
+    case 'time_shift': {
+      const { pushTimeShiftToSupabase } = await import('./supabaseSync');
+      if(!await pushTimeShiftToSupabase(data as TimeShift)) throw new Error('No se pudo sincronizar el turno horario.'); return true;
+    }
+    case 'quote': {
+      const { pushQuoteToSupabase } = await import('./supabaseSync');
+      if(!await pushQuoteToSupabase(data as Quote)) throw new Error('No se pudo sincronizar la cotización.'); return true;
+    }
+    case 'bank_card': {
+      const { pushBankCardToSupabase } = await import('./supabaseSync');
+      if(!await pushBankCardToSupabase(data as BankCard)) throw new Error('No se pudo sincronizar la cuenta bancaria.'); return true;
+    }
     case 'bank_card_balance': {
-      const d = data;
-      const synced = await setBankCardBalanceToSupabase(
-        d.id,
-        Number(d.expectedBalance) || 0,
-        Math.max(0, Number(d.newBalance) || 0)
-      );
-      if (!synced) {
-        await reconcileBankCanonical();
-        throw new PermanentSyncError('Conflicto de saldo bancario: otro movimiento cambió el saldo antes del ajuste.');
-      }
+      const { setBankCardBalanceToSupabase } = await import('./supabaseSync');
+      if(!await setBankCardBalanceToSupabase(data.id,Number(data.expectedBalance)||0,Math.max(0,Number(data.newBalance)||0))) throw new PermanentSyncError('Conflicto de saldo bancario.');
       return true;
     }
     case 'bank_transaction': {
-      const d = data;
-      if (d.__operation === 'delete') {
-        const res = await callDeleteBankTransactionRPC(d.id);
-        if (!res.success) {
-          const code = String(res.errorCode || '');
-          if (['P0001','23503','23505','42501','22003','22P02'].includes(code)) {
-            await reconcileBankCanonical();
-            throw new PermanentSyncError(res.error || 'No se pudo eliminar el movimiento bancario');
-          }
-          throw new Error(res.error || 'No se pudo eliminar el movimiento bancario');
-        }
-        return true;
-      }
-      // Un ingreso generado por una venta nunca se procesa solo. Aunque su
-      // dependencia haya quedado marcada como conflict, verificamos de nuevo
-      // que la venta exista y siga válida en Supabase antes del banco.
-      if (d.transactionId) {
-        const { data: sale, error: saleError } = await supabase
-          .from('transactions')
-          .select('id,status,deleted_at')
-          .eq('id', d.transactionId)
-          .maybeSingle();
-        if (saleError) throw saleError;
-        if (!sale || sale.deleted_at || sale.status !== 'completed') {
-          throw new Error('La venta asociada todavía no está confirmada en Supabase; el movimiento bancario permanece pendiente.');
-        }
-      }
-      const res = await callProcessBankTransactionRPC(d);
-      if (!res.success) {
-        const code = String(res.errorCode || '');
-        if (['P0001','23503','23505','42501','22003','22P02'].includes(code)) {
-          await reconcileBankCanonical();
-          throw new PermanentSyncError(res.error || 'No se pudo sincronizar el movimiento bancario');
-        }
-        throw new Error(res.error || 'No se pudo sincronizar el movimiento bancario');
-      }
+      const { callProcessBankTransactionRPC } = await import('./supabaseSync');
+      const res = await callProcessBankTransactionRPC(data);
+      if(!res.success) throw new Error(res.error || 'No se pudo sincronizar el movimiento bancario.');
       return true;
     }
-    case 'supplier': { const d=data; const {error}=await supabase.from('suppliers').upsert({id:d.id,name:d.name,phone:d.phone||'',address:d.address||'',email:d.email||'',rating:d.rating||5,type_of_merchandise:d.typeOfMerchandise||''}); if(error) throw error; return true; }
-    case 'supplier_order': { const d=data; const {error}=await supabase.from('supplier_orders').upsert({id:d.id,supplier_id:d.supplierId,date:d.date,expected_delivery_date:d.expectedDeliveryDate,items:d.items||[],total:d.total,status:d.status,branch_id:d.branchId,transport_details:d.transportDetails,transport_cost:d.transportCost}); if(error) throw error; return true; }
-    case 'inventory_audit': { const d=data; const {error}=await supabase.from('inventory_audits').upsert({id:d.id,date:d.date,branch_id:d.branchId,user_id:d.userId,status:d.status,items:d.items||[],notes:d.notes}); if(error) throw error; return true; }
+    case 'supplier': {
+      const { pushSupplierToSupabase } = await import('./supabaseSync');
+      if(!await pushSupplierToSupabase(data as Supplier)) throw new Error('No se pudo sincronizar el proveedor.'); return true;
+    }
+    case 'supplier_order': {
+      const { pushSupplierOrderToSupabase } = await import('./supabaseSync');
+      if(!await pushSupplierOrderToSupabase(data as SupplierOrder)) throw new Error('No se pudo sincronizar la compra.'); return true;
+    }
+    case 'inventory_audit': {
+      const { pushInventoryAuditToSupabase } = await import('./supabaseSync');
+      if(!await pushInventoryAuditToSupabase(data as InventoryAudit)) throw new Error('No se pudo sincronizar la auditoría.'); return true;
+    }
     case 'transaction': {
       const transaction = data as Transaction;
       const res = await callProcessTransactionRPC(transaction);
@@ -778,52 +680,20 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
       return true;
     }
     case 'bank_internal_transfer': {
-      const res = await callBankInternalTransferRPC(data);
-      if (!res.success) {
-        const code = String(res.errorCode || '');
-        if (['P0001','23503','23505','42501','22003','22P02'].includes(code)) {
-          await reconcileBankCanonical();
-          throw new PermanentSyncError(res.error || 'No se pudo sincronizar la transferencia bancaria');
-        }
-        throw new Error(res.error || 'No se pudo sincronizar la transferencia bancaria');
-      }
-      return true;
+      const { callBankInternalTransferRPC } = await import('./supabaseSync');
+      const res=await callBankInternalTransferRPC(data); if(!res.success)throw new Error(res.error||'No se pudo completar la transferencia bancaria.'); return true;
     }
     case 'bank_internal_transfer_delete': {
-      const res = await callDeleteBankInternalTransferRPC(data.operationId);
-      if (!res.success) {
-        const code = String(res.errorCode || '');
-        if (['P0001','23503','23505','42501','22003','22P02'].includes(code)) {
-          await reconcileBankCanonical();
-          throw new PermanentSyncError(res.error || 'No se pudo revertir la transferencia bancaria');
-        }
-        throw new Error(res.error || 'No se pudo revertir la transferencia bancaria');
-      }
-      return true;
+      const { callDeleteBankInternalTransferRPC } = await import('./supabaseSync');
+      const res=await callDeleteBankInternalTransferRPC(String(data.operationId||data.id)); if(!res.success)throw new Error(res.error||'No se pudo revertir la transferencia bancaria.'); return true;
     }
     case 'bank_transaction_delete': {
-      const res = await callDeleteBankTransactionRPC(data.id);
-      if (!res.success) {
-        const code = String(res.errorCode || '');
-        if (['P0001','23503','23505','42501','22003','22P02'].includes(code)) {
-          await reconcileBankCanonical();
-          throw new PermanentSyncError(res.error || 'No se pudo eliminar el movimiento bancario');
-        }
-        throw new Error(res.error || 'No se pudo eliminar el movimiento bancario');
-      }
-      return true;
+      const { callDeleteBankTransactionRPC } = await import('./supabaseSync');
+      const res=await callDeleteBankTransactionRPC(String(data.id)); if(!res.success)throw new Error(res.error||'No se pudo eliminar el movimiento bancario.'); return true;
     }
     case 'bank_card_delete': {
-      const res = await callDeleteBankCardRPC(data.id);
-      if (!res.success) {
-        const code = String(res.errorCode || '');
-        if (['P0001','23503','23505','42501','22003','22P02'].includes(code)) {
-          await reconcileBankCanonical();
-          throw new PermanentSyncError(res.error || 'No se pudo eliminar la cuenta bancaria');
-        }
-        throw new Error(res.error || 'No se pudo eliminar la cuenta bancaria');
-      }
-      return true;
+      const { callDeleteBankCardRPC } = await import('./supabaseSync');
+      const res=await callDeleteBankCardRPC(String(data.id)); if(!res.success)throw new Error(res.error||'No se pudo desactivar la cuenta bancaria.'); return true;
     }
     case 'supplier_receive': {
       if (!data.userId) throw new PermanentSyncError('La recepción de mercancía no tiene un trabajador válido asociado.');
@@ -841,154 +711,38 @@ async function processQueueItem(supabase: any, item: OfflineQueueItem): Promise<
     }
     case 'audit_complete': { const res = await callSaveInventoryAuditCountRPC(data.id, data.userId, data.items || [], data.notes); if (!res.success) throw new Error(res.error || 'No se pudo guardar el conteo'); return true; }
     case 'inventory': {
-      // Compatibilidad con colas antiguas que guardaban un stock absoluto.
-      // Nunca sobrescribimos silenciosamente un cambio remoto: solo aceptamos
-      // la operación si el servidor todavía coincide con el valor esperado.
-      const { data: current, error: readError } = await supabase.from('inventory').select('quantity').eq('product_id', data.productId).eq('branch_id', data.branchId).eq('variant_label', data.variantLabel || '').maybeSingle();
-      if (readError) throw readError;
-      if (current && Number(current.quantity) !== Number(data.quantity)) {
-        try {
-          const refreshed = await pullBranchInventoryFromSupabase(data.branchId);
-          if (refreshed.success) {
-            useStore.setState(state => ({
-              inventory: [
-                ...(state.inventory || []).filter(item => item.branchId !== data.branchId),
-                ...refreshed.inventory
-              ]
-            }));
-          }
-        } catch (refreshError) {
-          console.warn('[inventory legado] No se pudo refrescar el stock canónico tras conflicto:', refreshError);
-        }
-        throw new PermanentSyncError('Conflicto de inventario legado: el stock remoto cambió antes de sincronizar.');
-      }
-      return true;
+      const { pushInventoryToSupabase } = await import('./supabaseSync');
+      if(!await pushInventoryToSupabase(data as InventoryLevel)) throw new Error('No se pudo sincronizar el stock.'); return true;
     }
     case 'inventory_adjustment': {
-      const { data: result, error } = await supabase.rpc('apply_inventory_adjustment_v2', {
-        p_operation_id: item.actionId, p_product_id: data.productId, p_branch_id: data.branchId,
-        p_variant_label: data.variantLabel || '', p_delta: Number(data.delta) || 0,
-        p_min_quantity: Number(data.minQuantity) || 0, p_user_id: data.userId || null,
-        p_movement_type: data.movementType || 'ADJUSTMENT'
-      });
-      if (error) throw error;
-      if (result?.conflict) throw new PermanentSyncError(result.message || 'Conflicto de inventario: el stock cambió mientras la operación estaba pendiente.');
+      const { applyInventoryAdjustmentToSupabase } = await import('./supabaseSync');
+      const res = await applyInventoryAdjustmentToSupabase({...data,operationId:String(data.operationId||item.actionId)});
+      if(!res.success) throw new Error(res.error || 'No se pudo aplicar el ajuste de inventario.');
       return true;
     }
     case 'inventory_reconcile': {
-      const { data: result, error } = await supabase.rpc('reconcile_inventory_v2', {
-        p_operation_id: item.actionId, p_product_id: data.productId, p_branch_id: data.branchId,
-        p_variant_label: data.variantLabel || '', p_expected_quantity: Number(data.expectedQuantity),
-        p_new_quantity: Math.max(0, Number(data.quantity) || 0), p_min_quantity: Number(data.minQuantity) || 0,
-        p_user_id: data.userId || null
-      });
-      if (error) throw error;
-      if (result?.conflict) throw new PermanentSyncError(result.message || 'Conflicto de inventario: el stock cambió mientras estaba offline.');
+      const { reconcileInventoryToSupabase } = await import('./supabaseSync');
+      const res = await reconcileInventoryToSupabase({...data,operationId:String(data.operationId||item.actionId),newQuantity:Number(data.quantity??data.newQuantity)||0});
+      if(!res.success){ if(res.conflict) throw new PermanentSyncError(res.error||'Conflicto de inventario.'); throw new Error(res.error||'No se pudo reconciliar el inventario.');}
       return true;
     }
     case 'return': {
-      const ret = data as ReturnItem;
-      const { error } = await supabase.from('returns').upsert({
-        id: ret.id,
-        transaction_id: ret.transactionId || null,
-        product_id: ret.productId,
-        quantity: Number(ret.quantity) || 1,
-        reason: ret.reason || '',
-        date: ret.date,
-        status: ret.status || 'pending',
-        type: ret.type || 'refund',
-        notes: ret.notes || null,
-        variant_label: ret.variantLabel || null,
-        branch_id: ret.branchId || null,
-        replacement_product_id: ret.replacementProductId || null,
-        replacement_quantity: ret.replacementQuantity || null,
-        processed_by: ret.processedBy || null,
-        refund_status: ret.refundStatus || (ret.type === 'refund' ? 'pending' : 'not_required'),
-        refund_amount: ret.refundAmount ?? null,
-        refund_currency_code: ret.refundCurrencyCode || null,
-        refund_method: ret.refundMethod || null,
-        refund_bank_card_id: ret.refundBankCardId || null,
-        refund_transaction_id: ret.refundTransactionId || null,
-        received_at: ret.receivedAt || null,
-        refunded_at: ret.refundedAt || null
-      });
-      if (error) throw error;
-      return true;
+      const { pushReturnToSupabase } = await import('./supabaseSync');
+      if(!await pushReturnToSupabase(data as ReturnItem)) throw new Error('No se pudo sincronizar la devolución.'); return true;
     }
-    case 'receipt_config': { const { error } = await supabase.from('settings').upsert({ id: 'global', receipt_config: data }); if (error) throw error; return true; }
+    case 'receipt_config': {
+      const { pushReceiptConfigToSupabase } = await import('./supabaseSync');
+      if(!await pushReceiptConfigToSupabase(data)) throw new Error('No se pudo sincronizar la configuración del recibo.'); return true;
+    }
     case 'store_config': {
-      const { data: current, error: readError } = await supabase
-        .from('settings')
-        .select('store_config')
-        .eq('id', 'global')
-        .maybeSingle();
-      if (readError) throw readError;
-      const currentConfig = (current?.store_config && typeof current.store_config === 'object') ? current.store_config : {};
-      const incomingConfig = (data && typeof data === 'object') ? data : {};
-      const mergedConfig = { ...currentConfig, ...incomingConfig };
-      const { error } = await supabase.from('settings').upsert({ id: 'global', store_config: mergedConfig });
-      if (error) throw error;
-      return true;
+      const { pushStoreConfigToSupabase } = await import('./supabaseSync');
+      if(!await pushStoreConfigToSupabase(data)) throw new Error('No se pudo sincronizar la configuración de empresa.'); return true;
     }
-    case 'catalog_config': { const { error } = await supabase.from('settings').upsert({ id: 'global', catalog_config: data }); if (error) throw error; return true; }
-    default: throw new PermanentSyncError(`Tipo de operación offline no soportado: ${String(type)}`);
-  }
-}
-
-export async function processOfflineQueue(): Promise<{ processed: number; failed: number; remaining: number; conflicts: number; errors: Array<{ type: string; actionId: string; message: string; retryCount?: number }> }> {
-  // Nunca inspeccionar una cola todavía no hidratada desde IndexedDB.
-  await waitForOfflineQueueReady();
-  if (isProcessingQueue || (typeof navigator !== 'undefined' && !navigator.onLine)) {
-    return { processed: 0, failed: 0, remaining: getOfflineQueueCount(), conflicts: getOfflineConflictCount(), errors: [] };
-  }
-  const supabase = getSupabase();
-  if (!supabase) return { processed: 0, failed: 0, remaining: getOfflineQueueCount(), conflicts: getOfflineConflictCount(), errors: [{ type: 'system', actionId: 'supabase', message: 'Supabase no está disponible en esta sesión.' }] };
-  const reachability = await checkSupabaseReachability();
-  if (!reachability.ok) {
-    return { processed: 0, failed: 0, remaining: getOfflineQueueCount(), conflicts: getOfflineConflictCount(), errors: [{ type: 'network', actionId: 'connectivity', message: reachability.message || 'Supabase no está accesible todavía.' }] };
-  }
-  const allQueueAtStart = getOfflineQueue();
-  const queueAtStart = allQueueAtStart.filter(item => item.status !== 'conflict');
-  if (!queueAtStart.length) return { processed: 0, failed: 0, remaining: 0, conflicts: getOfflineConflictCount(), errors: [] };
-
-  isProcessingQueue = true;
-  // Procesamos una instantánea estable. Las operaciones que entren mientras
-  // sincronizamos se reconcilian al final y nunca se pierden por reemplazar
-  // memoryQueue con una instantánea vieja.
-  // Orden estable por dependencias reales. No usamos una prioridad global:
-  // hacerlo podría mover una corrección de inventario posterior a una venta
-  // anterior. Solo adelantamos una operación cuando otra operación ENCOLADA
-  // es una dependencia explícita de ella.
-  const allQueued = new Map<string, OfflineQueueItem>();
-  const blockedExistingIds = new Set(
-    allQueueAtStart.filter(q => q.status === 'conflict').map(q => q.id)
-  );
-  const cashBySessionId = new Map<string, OfflineQueueItem[]>();
-  for (const q of allQueueAtStart) {
-    allQueued.set(q.type + ':' + q.actionId, q);
-    if (q.type === 'cash_session' && q.data?.id) {
-      const list = cashBySessionId.get(String(q.data.id)) || [];
-      list.push(q);
-      cashBySessionId.set(String(q.data.id), list);
+    case 'catalog_config': {
+      const { pushCatalogConfigToSupabase } = await import('./supabaseSync');
+      if(!await pushCatalogConfigToSupabase(data)) throw new Error('No se pudo sincronizar la configuración del catálogo.'); return true;
     }
-  }
-  const dep = (type: OfflineActionType, id?: string | null) => id ? allQueued.get(type + ':' + id) : undefined;
-  const cashOp = (sessionId: string | undefined, operation: 'open' | 'close' | 'cancel' | 'join' | 'snapshot') => {
-    if (!sessionId) return undefined;
-    const list = cashBySessionId.get(String(sessionId)) || [];
-    return list.find(q => q.data?.__operation === operation ||
-      (operation === 'open' && String(q.actionId).startsWith('cash-open:')) ||
-      (operation === 'close' && String(q.actionId).startsWith('cash-close:')) ||
-      (operation === 'cancel' && String(q.actionId).startsWith('cash-cancel:')) ||
-      (operation === 'join' && String(q.actionId).startsWith('cash-join:'))
-    );
-  };
-  const dependencies = (item: OfflineQueueItem): OfflineQueueItem[] => {
-    const d: OfflineQueueItem[] = [];
-    const data = item.data || {};
-    const add = (x?: OfflineQueueItem) => { if (x && x.id !== item.id) d.push(x); };
-    switch (item.type) {
-      case 'product_delete': {
+    case 'product_delete': {
         const productId = String(data?.id || '');
         for (const queued of allQueued.values()) {
           if (queued.id === item.id) continue;
