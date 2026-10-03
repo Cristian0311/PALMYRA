@@ -240,7 +240,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Mobile Top Bar (Only when not on POS or if POS wants it) */}
       {!isPosPage && (
         <div className="md:hidden bg-rose-600 text-white p-3.5 flex justify-between items-center shadow-md shrink-0">
-          <h1 className="text-lg font-bold tracking-tight">PALMYRA POS</h1>
+          <h1 className="text-lg font-bold tracking-tight">PALMYRA</h1>
           <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-1">
             <Menu className="w-5 h-5" />
           </button>
@@ -261,7 +261,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Header with Collapse toggle */}
         <div className={cn("p-4 shrink-0 flex items-center justify-between border-b border-subtle", sidebarCollapsed && "md:p-3 md:justify-center")}>
           <div className={cn("flex items-center gap-2.5 min-w-0", sidebarCollapsed && "md:hidden")}>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#24151f] shadow-sm">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#241622] shadow-sm">
               <svg viewBox="0 0 64 64" width="22" height="22" fill="none" aria-label="PALMYRA POS">
                 <path d="M9 46h9l2-14c1-7 5-11 11-11 4 0 7 2 9 5 2-7 6-11 12-11 7 0 11 6 10 13l-2 18h-8l1-14c1-5-1-9-5-9-4 0-6 4-6 9l-1 14H31l1-14c0-5-2-8-5-8-4 0-6 3-6 8l-2 14H9Z" fill="#fff"/>
                 <path d="M39 21c3 0 6 2 8 5l5-5" stroke="#E56B99" strokeWidth="3" strokeLinecap="round"/>
@@ -270,9 +270,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
             <div className="min-w-0">
               <h1 className="text-lg font-black tracking-tight text-primary uppercase truncate">
-                PALMYRA<span className="text-rose-600"> POS</span>
+                PALMYRA
               </h1>
-              <p className="text-[7px] text-muted uppercase tracking-[0.2em] font-black">Business platform</p>
+              <p className="text-[7px] text-muted uppercase tracking-[0.2em] font-black">Commerce OS</p>
             </div>
           </div>
           
